@@ -142,6 +142,7 @@ def calc_weight(
                 id = idx(x, y)
                 Nx[vid, i][id] += wp.dot(Gp_, Pixy) * weight
                 for j in range(3):
+                    dGpj = dGp[vid, j]
                     dNx[vid, i, j][id] += wp.dot(Gp_, Pixy) * dweight[j] + \
                                         wp.dot(dGpj, Pixy) * weight
                     for k in range(3):

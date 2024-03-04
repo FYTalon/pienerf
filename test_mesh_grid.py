@@ -1,8 +1,19 @@
+import warp as wp
+import warp.sparse as wps
 import torch
-from kornia.utils.grid import create_meshgrid3d
+import warp.torch
+import numpy as np
 
-a = torch.tensor([0, 0, 1, 1, 2, 2])
-mass = torch.tensor([1, 1, 1, 1, 1, 1])
-x = torch.tensor([0, 0, 0])
-x[a] += mass
+wp.init()
+
+a = torch.ones(3, dtype=torch.int32)
+
+n = a.size(0) + a.sum()
+
+mat = wps.bsr_zeros(n, n, block_type=wp.float64)
+
+a = wp.array(shape=n, dtype=wp.float64).zero_()
+
+x = wps.bsr_mv(mat, a)
+
 print(x)

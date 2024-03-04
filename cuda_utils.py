@@ -45,7 +45,7 @@ def build_IP_global(
     r = topo[vid, i] * 10 + x
     c = topo[vid, j] * 10 + y
 
-    mat[r, c] = rho_v * (dx ** wpfloat(3)) * Nx[vid, i][x] * Nx[vid, j][y] / (dt ** wpfloat(2))
+    mat[r, c] += rho_v * (dx ** wpfloat(3)) * Nx[vid, i][x] * Nx[vid, j][y] / (dt ** wpfloat(2))
 
     for p in range(3):
         mat[r, c] += (dx ** wpfloat(3)) * (rho_v * (dx ** wpfloat(2)) / wpfloat(12) /
@@ -74,7 +74,7 @@ def build_pin_global(
     r = topo[vvid, i] * 10 + x
     c = topo[vvid, j] * 10 + y
 
-    mat[r, c] = stiff * Nx[vvid, i][x] * Nx[vvid, j][y]
+    mat[r, c] += stiff * Nx[vvid, i][x] * Nx[vvid, j][y]
 
 @wp.kernel
 def calc_elastic(
