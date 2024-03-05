@@ -14,7 +14,7 @@ def main():
     sim = Simulator(
         dt=1e-3,
         iters=2,
-        res=torch.tensor([16, 3, 3]),
+        res=torch.tensor([12, 12, 12]),
         dx=1,
         subspace=10
     )

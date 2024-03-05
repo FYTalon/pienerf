@@ -12,7 +12,6 @@ import cpu_utils
 from cuda_utils import torchfloat, npfloat, wpfloat, vec3, vec10, vec8i, mat10, mat3
 import scipy
 from scipy.sparse import csc_matrix
-import pyspectra
 
 class Simulator:
     def __init__(
@@ -92,6 +91,7 @@ class Simulator:
         self.S = None
         self.U = None
 
+        self.global_matrix = None
         self.global_non_diag = None
         self.diag = None
 
@@ -188,7 +188,7 @@ class Simulator:
             dtype=torch.bool
         )
 
-        self.kdx = self.res.max() / (self.kres - 1)
+        self.kdx = self.res.max() * self.dx / (self.kres - 1)
 
         self.IP_kernel = torch.zeros(
             (self.IP_mask.sum(), 8),
@@ -281,6 +281,8 @@ class Simulator:
         )
 
         self.rhs_rest = self.build_rhs() + self.mass_matrix_invt2 @ self.dof
+
+        print(self.global_matrix @ self.dof - self.rhs_rest)
 
 
     def init_GMLS(self, pos, topo):
@@ -408,7 +410,6 @@ class Simulator:
             dim=(self.is_pin.sum() * 6400,),
             inputs=[
                 wpfloat(self.stiff),
-                wp.int32(self.IP_pos.size(0) * 6400),
                 wp.from_torch(vid),
                 wp.from_torch(self.pts_kernel),
                 wp.from_torch(self.pts_Nx, dtype=vec10),
@@ -421,18 +422,20 @@ class Simulator:
         global_matrix[0::3, 0::3] = mat
         global_matrix[1::3, 1::3] = mat
         global_matrix[2::3, 2::3] = mat
+
+        self.global_matrix = global_matrix
         global_matrix = global_matrix.cpu().numpy()
 
         print("eigen bg")
 
-        m_S, m_U = scipy.sparse.linalg.eigsh(
-            global_matrix, k=self.subspace, which='SM'
-        )
+        # m_S, m_U = scipy.sparse.linalg.eigsh(
+        #     global_matrix, k=self.subspace, which='SM'
+        # )
 
         print("eigen fin")
 
-        self.S = torch.from_numpy(m_S).to(self.pos.device)
-        self.U = torch.from_numpy(m_U).to(self.pos.device)
+        # self.S = torch.from_numpy(m_S).to(self.pos.device)
+        # self.U = torch.from_numpy(m_U).to(self.pos.device)
 
         global_matrix = torch.from_numpy(global_matrix).cuda()
         idx = torch.arange(0, dimension * 3, 1, dtype=torch.int32)

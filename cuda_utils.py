@@ -45,20 +45,19 @@ def build_IP_global(
     r = topo[vid, i] * 10 + x
     c = topo[vid, j] * 10 + y
 
-    mat[r, c] += rho_v * (dx ** wpfloat(3)) * Nx[vid, i][x] * Nx[vid, j][y] / (dt ** wpfloat(2))
+    wp.atomic_add(mat, r, c, rho_v * (dx ** wpfloat(3)) * Nx[vid, i][x] * Nx[vid, j][y] / (dt ** wpfloat(2)))
 
     for p in range(3):
-        mat[r, c] += (dx ** wpfloat(3)) * (rho_v * (dx ** wpfloat(2)) / wpfloat(12) /
-                                          (dt ** wpfloat(2)) + mu_v + lam_v) * dNx[vid, i, p][x] * dNx[vid, j, p][y]
+        wp.atomic_add(mat, r, c, (dx ** wpfloat(3)) * (rho_v * (dx ** wpfloat(2)) / wpfloat(12) /
+                                          (dt ** wpfloat(2)) + mu_v + lam_v) * dNx[vid, i, p][x] * dNx[vid, j, p][y])
         for q in range(3):
-            mat[r, c] += (dx ** wpfloat(5)) * (mu_v + lam_v) / wpfloat(12) * \
-                        ddNx[vid, i, p, q][x] * ddNx[vid, j, p, q][y]
+            wp.atomic_add(mat, r, c, (dx ** wpfloat(5)) * (mu_v + lam_v) / wpfloat(12) * \
+                        ddNx[vid, i, p, q][x] * ddNx[vid, j, p, q][y])
 
 
 @wp.kernel
 def build_pin_global(
         stiff: wpfloat,
-        offset: wp.int32,
         vidx: wp.array(dtype=wp.int32),
         topo: wp.array(shape=(0, 0), dtype=wp.int32),
         Nx: wp.array(shape=(0, 0), dtype=vec10),
@@ -74,7 +73,7 @@ def build_pin_global(
     r = topo[vvid, i] * 10 + x
     c = topo[vvid, j] * 10 + y
 
-    mat[r, c] += stiff * Nx[vvid, i][x] * Nx[vvid, j][y]
+    wp.atomic_add(mat, r, c, stiff * Nx[vvid, i][x] * Nx[vvid, j][y])
 
 @wp.kernel
 def calc_elastic(
