@@ -1,60 +1,6 @@
 from func_utils import *
 
 @wp.kernel
-def calc_F(
-        topo: wp.array(shape=(0, 0), dtype=wp.int32),
-        dNx: wp.array(shape=(0, 0, 0), dtype=vec10),
-        dof: wp.array(dtype=vec3),
-):
-    vid = wp.tid()
-
-    mat = mat3(wpfloat(0.0))
-    for i in range(8):
-        kid = topo[vid, i]
-        for x in range(10):
-            mat += wp.outer(
-                dof[kid * 10 + x],
-                vec3(
-                    dNx[vid, i, 0][x],
-                    dNx[vid, i, 1][x],
-                    dNx[vid, i, 2][x]
-                )
-            )
-    wp.printf("%lf %lf %lf\n%lf %lf %lf\n%lf %lf %lf\n",
-              mat[0, 0], mat[0, 1], mat[0, 2],
-              mat[1, 0], mat[1, 1], mat[1, 2],
-              mat[2, 0], mat[2, 1], mat[2, 2],
-              )
-
-@wp.kernel
-def calc_nabla_F(
-        topo: wp.array(shape=(0, 0), dtype=wp.int32),
-        ddNx: wp.array(shape=(0, 0, 0, 0), dtype=vec10),
-        dof: wp.array(dtype=vec3),
-):
-    vid = wp.tid()
-
-    for k in range(3):
-        mat = mat3(wpfloat(0.0))
-        for i in range(8):
-            kid = topo[vid, i]
-            for x in range(10):
-                mat += wp.outer(
-                    dof[kid * 10 + x],
-                    vec3(
-                        ddNx[vid, i, 0, k][x],
-                        ddNx[vid, i, 1, k][x],
-                        ddNx[vid, i, 2, k][x]
-                    )
-                )
-        wp.printf("%lf %lf %lf\n%lf %lf %lf\n%lf %lf %lf\n",
-                  mat[0, 0], mat[0, 1], mat[0, 2],
-                  mat[1, 0], mat[1, 1], mat[1, 2],
-                  mat[2, 0], mat[2, 1], mat[2, 2],
-                  )
-
-
-@wp.kernel
 def collect_param(
         topo: wp.array(dtype=wp.int32),
         mu: wp.array(dtype=wpfloat),
@@ -235,17 +181,6 @@ def collect_rhs_kernel(
                                  dNx[vid, dir, 1][x],
                                  dNx[vid, dir, 2][x]
                              )
-
-
-@wp.kernel
-def collect_diag(
-        diag: wp.array(dtype=wpfloat),
-        row: wp.array(dtype=wp.int32),
-        val: wp.array(dtype=wpfloat)
-):
-    vid = wp.tid()
-
-    wp.atomic_add(diag, row[vid], val[vid])
 
 
 @wp.kernel
