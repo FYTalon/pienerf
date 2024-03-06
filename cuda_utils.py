@@ -273,7 +273,7 @@ def update_F_kernel(
         Nx: wp.array(shape=(0, 0), dtype=vec10),
         dNx: wp.array(shape=(0, 0, 0), dtype=vec10),
         ddNx: wp.array(shape=(0, 0, 0, 0), dtype=vec10)
-)
+):
     vid = wp.tid()
 
     for i in range(8):
