@@ -264,6 +264,35 @@ def update_pos_kernel(
 
 
 @wp.kernel
+def update_F_kernel(
+        pos: wp.array(dtype=vec3),
+        F: wp.array(dtype=mat3),
+        dF: wp.array(dtype=mat3),
+        topo: wp.array(shape=(0, 0), dtype=wp.int32),
+        dof: wp.array(dtype=vec3),
+        Nx: wp.array(shape=(0, 0), dtype=vec10),
+        dNx: wp.array(shape=(0, 0, 0), dtype=vec10),
+        ddNx: wp.array(shape=(0, 0, 0, 0), dtype=vec10)
+)
+    vid = wp.tid()
+
+    for i in range(8):
+        kid = topo[vid, i]
+        for x in range(10):
+            pos[vid] += Nx[vid, i][j] * dof[kid * 10 + j]
+            F[vid] += wp.outer(dof[kid * 10 + x], vec3(
+                dNx[vid, i, 0][x],
+                dNx[vid, i, 1][x],
+                dNx[vid, i, 2][x],
+            ))
+            for j in range(3):
+                dF[vid, j] += wp.outer(dof[kid * 10 + x], vec3(
+                    ddNx[vid, i, j, 0][x],
+                    ddNx[vid, i, j, 1][x],
+                    ddNx[vid, i, j, 2][x],
+                ))
+
+@wp.kernel
 def count_IP_kernel(
         topo: wp.array(shape=(0, 0), dtype=wp.int32),
         cnt: wp.array(dtype=wp.int32)
@@ -288,6 +317,26 @@ def allocate_IP_kernel(
         kid = topo[vid, i]
         idx = wp.atomic_add(cnt, kid, wp.int32(1))
         buffer[bg[kid] + idx] = wp.vec2i(vid, i)
+
+
+@wp.kernel
+def collect_gravity(
+        dx: wpfloat,
+        topo: wp.array(shape=(0, 0), dtype=wp.int32),
+        Nx: wp.array(shape=(0, 0), dtype=vec10),
+        gravity: vec3,
+        rho: wp.array(dtype=wpfloat),
+        rhs: wp.array(dtype=vec3)
+):
+
+    vid = wp.tid()
+
+    m = rho[vid] * dx * dx * dx
+
+    for i in range(8):
+        kid = topo[vid, i]
+        for x in range(10):
+            wp.atomic_add(rhs, kid * 10 + x, m * Nx[vid, i][x] * gravity)
 
 
 

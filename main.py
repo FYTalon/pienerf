@@ -15,11 +15,11 @@ def main():
     sim = Simulator(
         dt=1e-2,
         iters=10,
-        res=torch.tensor([31, 3, 3]),
-        dx=0.1,
+        res=torch.tensor([90, 30, 30]),
+        dx=0.05,
         subspace=10,
         stiff=1e7,
-        base=torch.tensor([0.05, 0.05, 0.05])
+        base=torch.tensor([-0.5, -0.5, -0.5])
     )
 
     sim.InitializeFromPly("./assets/cube.ply")

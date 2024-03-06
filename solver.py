@@ -98,6 +98,7 @@ class Simulator:
         self.mass_matrix_invt2 = None
 
         self.rhs_rest = None
+        self.rhs_gravity = None
 
         self.dof = None
         self.dof_rest = None
@@ -197,7 +198,7 @@ class Simulator:
             dtype=torch.bool
         )
 
-        self.kdx = ((self.res.max() + 1) * self.dx - self.base.max()) / (self.kres - 1)
+        self.kdx = ((self.res.max() + 1) * self.dx) / (self.kres - 1)
 
         self.IP_kernel = torch.zeros(
             (self.IP_mask.sum(), 8),
@@ -205,8 +206,6 @@ class Simulator:
         )
         IP2K = (self.IP_pos - self.base) // self.kdx
         IP2K = IP2K.to(dtype=torch.int32)
-
-        print(self.kdx)
 
         for S in range(8):
             x = S >> 2 & 1
@@ -351,9 +350,26 @@ class Simulator:
         self.buffer = wp.to_torch(wp_buffer)
         self.rhs_rest = self.build_rhs() + self.mass_matrix_invt2 @ self.dof
 
+        wp_gravity = wp.zeros(shape=self.rhs_rest.size(0) // 3, dtype=vec3)
+
+        wp.launch(
+            kernel=cuda_utils.collect_gravity,
+            dim=(self.IP_pos.size(0),),
+            inputs=[
+                self.dx,
+                wp.from_torch(self.IP_kernel),
+                wp.from_torch(self.IP_Nx, dtype=vec10),
+                vec3(self.gravity[0], self.gravity[1], self.gravity[2]),
+                wp.from_torch(self.IP_rho),
+                wp_gravity
+            ]
+        )
+
+        self.rhs_gravity = wp.to_torch(wp_gravity).view(-1)
+
         # print(self.dof - self.global_matrix @ self.rhs_rest)
 
-        print(self.global_matrix.size())
+        # print(self.global_matrix.size())
 
     def init_GMLS(self, pos, topo):
         n_pts = pos.size(0)
@@ -421,6 +437,29 @@ class Simulator:
         )
 
         return wp.to_torch(pts_Nx).cuda(), wp.to_torch(pts_dNx).cuda(), wp.to_torch(pts_ddNx).cuda()
+
+
+    def get_IP_info(self):
+        wp_pos = wp.zeros(shape=self.IP_pos.size(0), dtype=vec3)
+        wp_F = wp.zeros(shape=self.IP_pos.size(0), dtype=mat3)
+        wp_dF = wp.zeros(shape=(self.IP_pos.size(0), 0), dtype=mat3)
+
+        wp.launch(
+            kernel=cuda_utils.update_F_kernel,
+            dim=(self.IP_pos.size(0),),
+            inputs=[
+                wp_pos,
+                wp_F,
+                wp_dF,
+                wp.from_torch(self.IP_kernel),
+                wp.from_torch(self.dof.view(-1, 3), dtype=vec3),
+                wp.from_torch(self.IP_Nx, dtype=vec10),
+                wp.from_torch(self.IP_dNx, dtype=vec10),
+                wp.from_torch(self.IP_ddNx, dtype=vec10)
+            ]
+        )
+
+        return wp.to_torch(wp_pos), wp.to_torch(wp_F), wp.to_torch(wp_dF)
 
 
     def collect_IP(self):
@@ -493,7 +532,7 @@ class Simulator:
         global_matrix[1::3, 1::3] = mat
         global_matrix[2::3, 2::3] = mat
 
-        self.global_matrix = global_matrix
+        self.global_matrix = torch.zeros_like(global_matrix)
         global_matrix = global_matrix.cpu().numpy()
 
         # print("eigen bg")
@@ -511,7 +550,24 @@ class Simulator:
         # self.U = torch.from_numpy(m_U).to(self.pos.device)
 
         global_matrix = torch.from_numpy(global_matrix).cuda()
-        self.global_matrix = global_matrix.inverse()
+
+        lst = []
+        for i in range(self.kernel_pos.size(0)):
+            if global_matrix[i * 30, i * 30] > 0.0:
+                for j in range(30):
+                    lst.append(i * 30 + j)
+
+        lst = torch.tensor(lst, dtype=torch.int32)
+
+        mat = global_matrix[lst][:, lst]
+        mat = np.linalg.inv(mat.cpu().numpy())
+        mat = torch.from_numpy(mat).cuda()
+
+        tmp = torch.zeros((dimension * 3, lst.size(0))).cuda()
+        tmp[lst] = mat
+        self.global_matrix[:, lst] = tmp
+
+
         idx = torch.arange(0, dimension * 3, 1, dtype=torch.int32)
 
         self.diag = global_matrix[idx, idx]
@@ -604,9 +660,8 @@ class Simulator:
 
 
     def compute_momentum(self):
-        gravity = torch.zeros(self.dof.size(0)).reshape(-1, 3) + self.gravity.unsqueeze(0)
-        self.dof_tilde = self.dof + self.dt * self.dof_vel + self.dt * self.dt * gravity.reshape(-1)
-        return self.mass_matrix_invt2 @ self.dof_tilde + self.dof_f
+        self.dof_tilde = self.dof + self.dt * self.dof_vel
+        return self.mass_matrix_invt2 @ self.dof_tilde + self.dof_f + self.rhs_gravity
 
     def update_force(self, vid, f):
         self.dof_f = torch.zeros(self.dof.size(0) // 3, 3)
