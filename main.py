@@ -15,7 +15,7 @@ def main():
     sim = Simulator(
         dt=1e-2,
         iters=10,
-        res=torch.tensor([90, 30, 30]),
+        bbox=torch.tensor([4, 4, 4]),
         dx=0.05,
         stiff=1e7,
         base=torch.tensor([-0.5, -0.5, -0.5])

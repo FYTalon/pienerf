@@ -18,7 +18,7 @@ class Simulator:
             self,
             dt=1e-2,
             iters=20,
-            res=torch.tensor([32, 32, 32], dtype=torch.int32),
+            bbox=torch.tensor([2.0, 2.0, 2.0], dtype=torch.float64),
             kres=7,
             dx=1,
             gravity=torch.tensor([0.0, -9.8, 0.0]),
@@ -27,7 +27,7 @@ class Simulator:
     ):
         self.dt = dt
         self.iters = iters
-        self.res = res
+        self.res = (bbox // dx).to(dtype=torch.int32)
         self.dx = dx
         self.base = base
 
