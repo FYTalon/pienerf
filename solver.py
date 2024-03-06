@@ -399,7 +399,7 @@ class Simulator:
     def get_IP_info(self):
         wp_pos = wp.zeros(shape=self.IP_pos.size(0), dtype=vec3)
         wp_F = wp.zeros(shape=self.IP_pos.size(0), dtype=mat3)
-        wp_dF = wp.zeros(shape=(self.IP_pos.size(0), 0), dtype=mat3)
+        wp_dF = wp.zeros(shape=(self.IP_pos.size(0), 3), dtype=mat3)
 
         wp.launch(
             kernel=cuda_utils.update_F_kernel,
