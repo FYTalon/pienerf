@@ -267,7 +267,7 @@ def update_pos_kernel(
 def update_F_kernel(
         pos: wp.array(dtype=vec3),
         F: wp.array(dtype=mat3),
-        dF: wp.array(dtype=mat3),
+        dF: wp.array(shape=(0, 0), dtype=mat3),
         topo: wp.array(shape=(0, 0), dtype=wp.int32),
         dof: wp.array(dtype=vec3),
         Nx: wp.array(shape=(0, 0), dtype=vec10),
@@ -279,7 +279,7 @@ def update_F_kernel(
     for i in range(8):
         kid = topo[vid, i]
         for x in range(10):
-            pos[vid] += Nx[vid, i][j] * dof[kid * 10 + j]
+            pos[vid] += Nx[vid, i][x] * dof[kid * 10 + x]
             F[vid] += wp.outer(dof[kid * 10 + x], vec3(
                 dNx[vid, i, 0][x],
                 dNx[vid, i, 1][x],
