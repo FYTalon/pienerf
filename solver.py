@@ -107,6 +107,11 @@ class Simulator:
 
         self.kdx = None
 
+        self.kernel_cnt = None
+        self.kernel_bg = None
+        self.tot = 0
+        self.buffer = None
+
 
     def OutputToPly(self, path):
         self.update_pos()
@@ -125,11 +130,11 @@ class Simulator:
                       np.asarray(plydata.elements[0]["z"])), axis=1).astype(npfloat)
         ).cuda()
 
-        self.grid_idx = torch.from_numpy(
-            np.stack((np.asarray(plydata.elements[0]["idx_x"]),
-                      np.asarray(plydata.elements[0]["idx_y"]),
-                      np.asarray(plydata.elements[0]["idx_z"])), axis=1).astype(np.int32)
-        ).cuda()
+        # self.grid_idx = torch.from_numpy(
+        #     np.stack((np.asarray(plydata.elements[0]["idx_x"]),
+        #               np.asarray(plydata.elements[0]["idx_y"]),
+        #               np.asarray(plydata.elements[0]["idx_z"])), axis=1).astype(np.int32)
+        # ).cuda()
 
         self.mass = torch.from_numpy(
             np.asarray(plydata.elements[0]["mass"]).astype(npfloat)
@@ -147,6 +152,10 @@ class Simulator:
         self.initialize()
 
     def initialize(self):
+
+        self.grid_idx = (self.pos - self.base) // self.dx
+        self.grid_idx = self.grid_idx.to(dtype=torch.int32)
+
         self.IP_mask = torch.zeros(
             (self.res[0], self.res[1], self.res[2]),
             dtype=torch.bool
@@ -180,7 +189,7 @@ class Simulator:
         )
         self.IP_grid = IP_pos[self.IP_mask, :]
 
-        self.IP_pos = self.IP_grid * self.dx + self.base + 0.5
+        self.IP_pos = (self.IP_grid + 0.5) * self.dx + self.base
 
         self.kernel_mask = torch.zeros(
             # (self.res[0] + 1, self.res[1] + 1, self.res[2] + 1),
@@ -188,7 +197,7 @@ class Simulator:
             dtype=torch.bool
         )
 
-        self.kdx = self.res.max() * self.dx / (self.kres - 1)
+        self.kdx = ((self.res.max() + 1) * self.dx - self.base.max()) / (self.kres - 1)
 
         self.IP_kernel = torch.zeros(
             (self.IP_mask.sum(), 8),
@@ -196,6 +205,9 @@ class Simulator:
         )
         IP2K = (self.IP_pos - self.base) // self.kdx
         IP2K = IP2K.to(dtype=torch.int32)
+
+        print(self.kdx)
+
         for S in range(8):
             x = S >> 2 & 1
             y = S >> 1 & 1
@@ -273,6 +285,26 @@ class Simulator:
         self.dof_tilde = self.dof.clone()
         self.dof_rest = self.dof.clone()
 
+        # wp.launch(
+        #     kernel=cuda_utils.calc_nabla_F,
+        #     dim=(self.IP_pos.size(0),),
+        #     inputs=[
+        #         wp.from_torch(self.IP_kernel),
+        #         wp.from_torch(self.IP_ddNx, dtype=vec10),
+        #         wp.from_torch(self.dof.view(-1, 3), dtype=vec3)
+        #     ]
+        # )
+
+        # wp.launch(
+        #     kernel=cuda_utils.calc_F,
+        #     dim=(self.IP_pos.size(0),),
+        #     inputs=[
+        #         wp.from_torch(self.IP_kernel),
+        #         wp.from_torch(self.IP_dNx, dtype=vec10),
+        #         wp.from_torch(self.dof.view(-1, 3), dtype=vec3)
+        #     ]
+        # )
+
         self.dof_vel = torch.zeros(
             (self.kernel_mask.sum() * 30)
         )
@@ -280,10 +312,48 @@ class Simulator:
             (self.kernel_mask.sum() * 30)
         )
 
+        self.kernel_cnt = torch.zeros(
+            (self.kernel_mask.sum()),
+            dtype=torch.int32
+        )
+
+        wp_cnt = wp.zeros(shape=self.kernel_pos.size(0), dtype=wp.int32)
+
+        wp.launch(
+            kernel=cuda_utils.count_IP_kernel,
+            dim=(self.IP_pos.size(0),),
+            inputs=[
+                wp.from_torch(self.IP_kernel),
+                wp_cnt
+            ]
+        )
+
+        self.kernel_cnt = wp.to_torch(wp_cnt)
+        self.kernel_bg = torch.cumsum(self.kernel_cnt, dim=0, dtype=torch.int32) - self.kernel_cnt
+        self.tot = self.kernel_cnt.sum()
+
+
+
+        wp_buffer = wp.zeros(shape=self.kernel_cnt.sum().item(), dtype=wp.vec2i)
+        wp_cnt = wp.zeros(shape=self.kernel_pos.size(0), dtype=wp.int32)
+
+        wp.launch(
+            kernel=cuda_utils.allocate_IP_kernel,
+            dim=(self.IP_pos.size(0),),
+            inputs=[
+                wp.from_torch(self.IP_kernel),
+                wp_cnt,
+                wp.from_torch(self.kernel_bg),
+                wp_buffer
+            ]
+        )
+
+        self.buffer = wp.to_torch(wp_buffer)
         self.rhs_rest = self.build_rhs() + self.mass_matrix_invt2 @ self.dof
 
-        print(self.global_matrix @ self.dof - self.rhs_rest)
+        # print(self.dof - self.global_matrix @ self.rhs_rest)
 
+        print(self.global_matrix.size())
 
     def init_GMLS(self, pos, topo):
         n_pts = pos.size(0)
@@ -426,18 +496,22 @@ class Simulator:
         self.global_matrix = global_matrix
         global_matrix = global_matrix.cpu().numpy()
 
-        print("eigen bg")
-
+        # print("eigen bg")
+        #
         # m_S, m_U = scipy.sparse.linalg.eigsh(
-        #     global_matrix, k=self.subspace, which='SM'
+        #     global_matrix, k=self.subspace, M=None, sigma=None, which='SM', v0=None, ncv=2 * self.subspace + 1,
+        #     maxiter=None,
+        #     tol=1e-10,
+        #     return_eigenvectors=True, Minv=None, OPinv=None, mode='normal'
         # )
-
-        print("eigen fin")
-
+        #
+        # print("eigen fin")
+        #
         # self.S = torch.from_numpy(m_S).to(self.pos.device)
         # self.U = torch.from_numpy(m_U).to(self.pos.device)
 
         global_matrix = torch.from_numpy(global_matrix).cuda()
+        self.global_matrix = global_matrix.inverse()
         idx = torch.arange(0, dimension * 3, 1, dtype=torch.int32)
 
         self.diag = global_matrix[idx, idx]
@@ -492,20 +566,33 @@ class Simulator:
         # wp_rhs = wp.from_torch(wp.to_torch(wp_rhs).reshape(-1, 3), dtype=vec3)
         wp_rhs = wp.zeros(shape=self.dof.size(0) // 3, dtype=vec3)
 
-        for dir in range(8):
-            wp.launch(
-                kernel=cuda_utils.collect_rhs_IP,
-                dim=(self.IP_pos.size(0),),
-                inputs=[
-                    wpfloat(self.dx),
-                    wp.int32(dir),
-                    wp.from_torch(self.IP_kernel),
-                    wp.from_torch(self.IP_mu),
-                    wp.from_torch(self.IP_lam),
-                    wp.from_torch(self.IP_dNx, dtype=vec10),
-                    wp_rhs, RF, VF
-                ]
-            )
+        wp.launch(
+            kernel=cuda_utils.collect_rhs_IP,
+            dim=(self.IP_pos.size(0),),
+            inputs=[
+                wpfloat(self.dx),
+                wp.from_torch(self.IP_kernel),
+                wp.from_torch(self.IP_mu),
+                wp.from_torch(self.IP_lam),
+                wp.from_torch(self.IP_dNx, dtype=vec10),
+                wp_rhs, RF, VF
+            ]
+        )
+
+        # wp.launch(
+        #     kernel=cuda_utils.collect_rhs_kernel,
+        #     dim=(self.kernel_pos.size(0) * 10,),
+        #     inputs=[
+        #         wpfloat(self.dx),
+        #         wp.from_torch(self.buffer, dtype=wp.vec2i),
+        #         wp.from_torch(self.kernel_bg),
+        #         wp.from_torch(self.kernel_cnt),
+        #         wp.from_torch(self.IP_mu),
+        #         wp.from_torch(self.IP_lam),
+        #         wp.from_torch(self.IP_dNx, dtype=vec10),
+        #         wp_rhs, RF, VF
+        #     ]
+        # )
 
         return wp.to_torch(wp_rhs).reshape(-1)
 
@@ -517,9 +604,8 @@ class Simulator:
 
 
     def compute_momentum(self):
-        self.dof_tilde = torch.zeros(self.dof.size(0))
         gravity = torch.zeros(self.dof.size(0)).reshape(-1, 3) + self.gravity.unsqueeze(0)
-        self.dof_tilde += self.dof + self.dt * self.dof_vel + self.dt * self.dt * gravity.reshape(-1)
+        self.dof_tilde = self.dof + self.dt * self.dof_vel + self.dt * self.dt * gravity.reshape(-1)
         return self.mass_matrix_invt2 @ self.dof_tilde + self.dof_f
 
     def update_force(self, vid, f):
@@ -538,17 +624,19 @@ class Simulator:
         dof_last = self.dof.clone()
         for it in range(self.iters):
             rhs = momentum + self.build_rhs() - self.rhs_rest
-            sub_rhs = self.U.permute(1, 0) @ rhs
-            sub_x = sub_rhs / self.S
-            x = self.U @ sub_x
-            for i in range(5):
-                x = self.jacobi(x, rhs)
+            x = self.global_matrix @ rhs
+            # sub_rhs = self.U.permute(1, 0) @ rhs
+            # sub_x = sub_rhs / self.S
+            # x = self.U @ sub_x
+            # for i in range(5):
+            #     x = self.jacobi(x, rhs)
             self.dof = self.dof_rest + x
         self.dof_vel = (self.dof - dof_last) / self.dt * 0.998
 
     def update_pos(self):
         self.pos = torch.zeros_like(self.pos)
         wp_pos = wp.zeros(shape=self.pos.size(0), dtype=vec3)
+        # self.dof[1::30] += 1
         wp.launch(
             kernel=cuda_utils.update_pos_kernel,
             dim=(self.pos.size(0),),

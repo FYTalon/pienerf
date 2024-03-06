@@ -1,6 +1,60 @@
 from func_utils import *
 
 @wp.kernel
+def calc_F(
+        topo: wp.array(shape=(0, 0), dtype=wp.int32),
+        dNx: wp.array(shape=(0, 0, 0), dtype=vec10),
+        dof: wp.array(dtype=vec3),
+):
+    vid = wp.tid()
+
+    mat = mat3(wpfloat(0.0))
+    for i in range(8):
+        kid = topo[vid, i]
+        for x in range(10):
+            mat += wp.outer(
+                dof[kid * 10 + x],
+                vec3(
+                    dNx[vid, i, 0][x],
+                    dNx[vid, i, 1][x],
+                    dNx[vid, i, 2][x]
+                )
+            )
+    wp.printf("%lf %lf %lf\n%lf %lf %lf\n%lf %lf %lf\n",
+              mat[0, 0], mat[0, 1], mat[0, 2],
+              mat[1, 0], mat[1, 1], mat[1, 2],
+              mat[2, 0], mat[2, 1], mat[2, 2],
+              )
+
+@wp.kernel
+def calc_nabla_F(
+        topo: wp.array(shape=(0, 0), dtype=wp.int32),
+        ddNx: wp.array(shape=(0, 0, 0, 0), dtype=vec10),
+        dof: wp.array(dtype=vec3),
+):
+    vid = wp.tid()
+
+    for k in range(3):
+        mat = mat3(wpfloat(0.0))
+        for i in range(8):
+            kid = topo[vid, i]
+            for x in range(10):
+                mat += wp.outer(
+                    dof[kid * 10 + x],
+                    vec3(
+                        ddNx[vid, i, 0, k][x],
+                        ddNx[vid, i, 1, k][x],
+                        ddNx[vid, i, 2, k][x]
+                    )
+                )
+        wp.printf("%lf %lf %lf\n%lf %lf %lf\n%lf %lf %lf\n",
+                  mat[0, 0], mat[0, 1], mat[0, 2],
+                  mat[1, 0], mat[1, 1], mat[1, 2],
+                  mat[2, 0], mat[2, 1], mat[2, 2],
+                  )
+
+
+@wp.kernel
 def collect_param(
         topo: wp.array(dtype=wp.int32),
         mu: wp.array(dtype=wpfloat),
@@ -119,7 +173,6 @@ def calc_elastic(
 @wp.kernel
 def collect_rhs_IP(
         dx: wpfloat,
-        dir: wp.int32,
         topo: wp.array(shape=(0, 0), dtype=wp.int32),
         mu: wp.array(dtype=wpfloat),
         lam: wp.array(dtype=wpfloat),
@@ -130,16 +183,53 @@ def collect_rhs_IP(
 ):
     vid = wp.tid()
 
-    kid = topo[vid, dir]
-
     mu_v = mu[vid]
     lam_v = lam[vid]
 
     R = RF[vid]
     V = VF[vid]
 
-    for x in range(10):
-        rhs[kid * 10 + x] += (dx ** wpfloat(3)) * (mu_v * R + lam_v * V) * \
+    for dir in range(8):
+        kid = topo[vid, dir]
+        for x in range(10):
+            wp.atomic_add(rhs, kid * 10 + x, (dx ** wpfloat(3)) * (mu_v * R + lam_v * V) * \
+                                 vec3(
+                                     dNx[vid, dir, 0][x],
+                                     dNx[vid, dir, 1][x],
+                                     dNx[vid, dir, 2][x]
+                                 ))
+
+@wp.kernel
+def collect_rhs_kernel(
+        dx: wpfloat,
+        buffer: wp.array(dtype=wp.vec2i),
+        bg: wp.array(dtype=wp.int32),
+        cnt: wp.array(dtype=wp.int32),
+        mu: wp.array(dtype=wpfloat),
+        lam: wp.array(dtype=wpfloat),
+        dNx: wp.array(shape=(0, 0, 0), dtype=vec10),
+        rhs: wp.array(dtype=vec3),
+        RF: wp.array(dtype=mat3),
+        VF: wp.array(dtype=mat3)
+):
+    tid = wp.tid()
+    kid = tid // 10
+    x = tid % 10
+
+    bg_k = bg[kid]
+    cnt_k = cnt[kid]
+
+    for i in range(cnt_k):
+        vid = buffer[bg_k + i][0]
+        dir = buffer[bg_k + i][1]
+
+        mu_v = mu[vid]
+        lam_v = lam[vid]
+
+        R = RF[vid]
+        V = VF[vid]
+
+        rhs[tid] += (dx ** wpfloat(3)) * (mu_v * R + lam_v * V) * \
                              vec3(
                                  dNx[vid, dir, 0][x],
                                  dNx[vid, dir, 1][x],
@@ -171,6 +261,34 @@ def update_pos_kernel(
         kid = topo[vid, i]
         for j in range(10):
             pos[vid] += Nx[vid, i][j] * dof[kid * 10 + j]
+
+
+@wp.kernel
+def count_IP_kernel(
+        topo: wp.array(shape=(0, 0), dtype=wp.int32),
+        cnt: wp.array(dtype=wp.int32)
+):
+    vid = wp.tid()
+
+    for i in range(8):
+        kid = topo[vid, i]
+        wp.atomic_add(cnt, kid, wp.int32(1))
+
+
+@wp.kernel
+def allocate_IP_kernel(
+        topo: wp.array(shape=(0, 0), dtype=wp.int32),
+        cnt: wp.array(dtype=wp.int32),
+        bg: wp.array(dtype=wp.int32),
+        buffer: wp.array(dtype=wp.vec2i)
+):
+    vid = wp.tid()
+
+    for i in range(8):
+        kid = topo[vid, i]
+        idx = wp.atomic_add(cnt, kid, wp.int32(1))
+        buffer[bg[kid] + idx] = wp.vec2i(vid, i)
+
 
 
 

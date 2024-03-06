@@ -1,5 +1,6 @@
 import os
 import warp as wp
+import time
 
 wp.init()
 
@@ -12,21 +13,27 @@ def main():
         os.mkdir("./outputs")
 
     sim = Simulator(
-        dt=1e-3,
-        iters=2,
-        res=torch.tensor([12, 12, 12]),
-        dx=1,
-        subspace=10
+        dt=1e-2,
+        iters=10,
+        res=torch.tensor([31, 3, 3]),
+        dx=0.1,
+        subspace=10,
+        stiff=1e7,
+        base=torch.tensor([0.05, 0.05, 0.05])
     )
 
     sim.InitializeFromPly("./assets/cube.ply")
 
     sim.OutputToPly("./outputs/0.ply")
 
+    cost = time.time()
+
     with torch.no_grad():
-        for i in range(1, 201):
+        for i in range(1, 1001):
+
             sim.stepforward()
             sim.OutputToPly(f"./outputs/{i}.ply")
+    print(time.time() - cost)
 
 if __name__ == "__main__":
     main()

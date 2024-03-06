@@ -79,7 +79,7 @@ def calc_Gp(
         dGx = dG[vid, x]
         for y in range(3):
             ddPv = Pjk(p, x, y)
-            ddGp[vid, x, y] = G_ * ddPv - \
+            ddGp[vid, x, y] = G_i * ddPv - \
                               G_i * dGx * G_i * Pj(p, y) - \
                               G_i * dG[vid, y] * G_i * dPv - \
                               G_i * ddG[vid, x, y] * G_i * Pv + \
