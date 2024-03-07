@@ -3,8 +3,8 @@ import warp as wp
 import numpy as np
 from plyfile import PlyData, PlyElement
 from kornia.utils.grid import create_meshgrid3d
-import simulator.cuda_utils
-import simulator.cpu_utils
+import simulator.cuda_utils as cuda_utils
+import simulator.cpu_utils as cpu_utils
 from simulator.cuda_utils import npfloat, wpfloat, vec3, vec10, mat10, mat3
 
 
