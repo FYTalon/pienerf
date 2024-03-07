@@ -303,7 +303,6 @@ if __name__ == "__main__":
     UniformSampling(opt, model).sample()
 
     # --dataset_type synthetic --workspace ../model/chair --exp_name chair_s --sub_coeff 0.15 --sub_res 25
-
     # --dataset_type synthetic --workspace ../model/chair --exp_name chair --sub_coeff 0.55 --sub_res 60
 
 

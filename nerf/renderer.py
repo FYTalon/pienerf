@@ -819,9 +819,13 @@ class NeRFRenderer(nn.Module):
         bmax = bmax.to(torch.float32).cuda()
         bbmin, bbmax = bmin * def_margin, bmax * def_margin  # give some margins to deformation
 
-        bbmin = -self.bound # debug
-        bbmax = self.bound # debug
+        bbmin = -self.bound * torch.ones(3, dtype=torch.float32) # debug
+        bbmax = self.bound * torch.ones(3, dtype=torch.float32) # debug
 
+        bbox_mask = (p_def[:, 0] >= bbmin[0]) & (p_def[:, 0] <= bbmax[0]) & \
+                    (p_def[:, 1] >= bbmin[1]) & (p_def[:, 1] <= bbmax[1]) & \
+                    (p_def[:, 2] >= bbmin[2]) & (p_def[:, 2] <= bbmax[2])
+        p_def = p_def[bbox_mask]
         pig_cnt, pig_bgn, pig_idx = self.get_pnts_in_grids(n_vtx, n_grid, p_def, bbmin, bbmax, hgs, res)
         # # print(pig_cnt.min().item(), "~", pig_cnt.max().item())
         # # print(pig_bgn.min().item(), "~", pig_bgn.max().item())
@@ -845,24 +849,27 @@ class NeRFRenderer(nn.Module):
             # decide compact_steps
             n_step = max(min(N // n_alive, 8), 1)
 
-            # xyzs, dirs, deltas = raymarching.march_rays_quadratic_bending(
-            #     pig_cnt, pig_bgn, pig_idx,
-            #     n_vtx, n_grid,
-            #     p_def, p_ori,
-            #     F_IP, dF_IP,
-            #     bbmin, hgs, res,
-            #     def_margin,
-            #
-            #     n_alive, n_step, rays_alive, rays_t, rays_o, rays_d,
-            #     self.bound, self.density_bitfield, self.cascade,
-            #     self.grid_size, nears, fars, 128,
-            #     perturb if step == 0 else False, dt_gamma, max_steps)
-            # # 145 ms
+            xyzs, dirs, deltas = raymarching.march_rays_quadratic_bending(
+                pig_cnt, pig_bgn, pig_idx,
+                n_vtx, n_grid,
+                p_def, p_ori,
+                F_IP, dF_IP,
+                bbmin, hgs, res,
+                def_margin,
 
-            xyzs, dirs, deltas = raymarching.march_rays(n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, self.bound,
-                                                        self.density_bitfield, self.cascade, self.grid_size, nears,
-                                                        fars, 128, perturb if step == 0 else False, dt_gamma, max_steps)
-            # 60 ms
+                n_alive, n_step, rays_alive, rays_t, rays_o, rays_d,
+                self.bound, self.density_bitfield, self.cascade,
+                self.grid_size, nears, fars, 128,
+                perturb if step == 0 else False, dt_gamma, max_steps)
+            # 145 ms
+
+            print(p_def-p_ori)
+            print("-"*100)
+
+            # xyzs, dirs, deltas = raymarching.march_rays(n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, self.bound,
+            #                                             self.density_bitfield, self.cascade, self.grid_size, nears,
+            #                                             fars, 128, perturb if step == 0 else False, dt_gamma, max_steps)
+            # # 60 ms
 
             sigmas, rgbs = self(xyzs, dirs)
             sigmas, rgbs = sigmas.to(torch.float32), rgbs.to(torch.float32)
@@ -893,7 +900,7 @@ class NeRFRenderer(nn.Module):
         return results
 
     def get_pnts_in_grids(self, n_vtx, n_grid, p_def, bbmin, bbmax, hgs, res):
-        assert abs((bbmax-bbmin) - hgs * float(res)) < 1e-15
+        assert abs((bbmax-bbmin)[0] - hgs * float(res)) < 1e-15
         self.device = "cuda"
         pig_idx = torch.zeros((n_vtx,), dtype=torch.int32, device=self.device)
         pig_bgn = torch.zeros((n_grid,), dtype=torch.int32, device=self.device)
@@ -961,13 +968,13 @@ def p2g(
     res: wp.float32,
 ):
     p = p_def[pid]
-    p = p - bbmin
-    bbox = bbmax - bbmin
-    if not (0 <= p[0] <= bbox[0] and 0 <= p[1] <= bbox[1] and 0 <= p[2] <= bbox[2]):
-        wp.printf("ERROR: p2g, p < bbmin or p > bbmax, p:(%f,%f,%f)\n", p[0], p[1], p[2])
-    g0 = wp.floor(p[0]/hgs)
-    g1 = wp.floor(p[1]/hgs)
-    g2 = wp.floor(p[2]/hgs)
+    if not (bbmin[0] <= p[0] <= bbmax[0] and bbmin[1] <= p[1] <= bbmax[1] and bbmin[2] <= p[2] <= bbmax[2]):
+        wp.printf("ERROR: p2g, p < bbmin or p > bbmax, p:(%f,%f,%f), bbox:[%f,%f,%f]-[%f,%f,%f]\n",
+                  p[0], p[1], p[2], bbmin[0], bbmin[1], bbmin[2], bbmax[0], bbmax[1], bbmax[2])
+    p_ = p - bbmin
+    g0 = wp.floor(p_[0]/hgs)
+    g1 = wp.floor(p_[1]/hgs)
+    g2 = wp.floor(p_[2]/hgs)
     gid = wp.int32(g2 * res * res + g1 * res + g0)
     if gid >= n_grid:
         wp.printf("ERROR: p2g. gid=%i, n_grid=%i\n", gid, n_grid)

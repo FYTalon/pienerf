@@ -1090,7 +1090,7 @@ __global__ void kernel_march_rays_quadratic_bending(
 
     while (t < far && step < n_step)
     {
-        bool found = false;
+        bool found = true;
 
         float x = clamp(ox + t * dx, -margined_bound, margined_bound);
         float y = clamp(oy + t * dy, -margined_bound, margined_bound);
@@ -1238,7 +1238,7 @@ void march_rays_quadratic_bending(
     static constexpr uint32_t N_THREAD = 128;
 
     AT_DISPATCH_FLOATING_TYPES_AND_HALF(
-        at::ScalarType::Float, "march_rays_b", ([&] {
+        at::ScalarType::Float, "march_rays_quadratic_bending", ([&] {
         kernel_march_rays_quadratic_bending<<<div_round_up(n_alive, N_THREAD), N_THREAD>>>(
             pig_cnt.data_ptr<int>(), pig_bgn.data_ptr<int>(), pig_idx.data_ptr<int>(),
             n_vtx, n_grid,

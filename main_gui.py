@@ -47,7 +47,7 @@ if __name__ == '__main__':
                       device=device, workspace=opt.workspace, use_checkpoint=opt.ckpt)
 
     sim = Simulator(
-        dt=1e-2,
+        dt=1e-3,
         iters=10,
         bbox=torch.tensor([2*opt.bound, 2*opt.bound, 2*opt.bound]),
         dx=0.05,
