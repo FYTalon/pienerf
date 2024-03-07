@@ -21,7 +21,7 @@ def main():
         base=torch.tensor([-0.5, -0.5, -0.5])
     )
 
-    sim.InitializeFromPly("./assets/cube.ply")
+    sim.InitializeFromPly("./assets/chair_s.ply")
 
     sim.OutputToPly("./outputs/0.ply")
 

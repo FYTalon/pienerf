@@ -587,10 +587,6 @@ class NeRFRenderer(nn.Module):
         return results
 
     def render_deformed(self, rays_o, rays_d, staged=False, max_ray_batch=4096, **kwargs):
-        # rays_o, rays_d: [B, N, 3], assumes B == 1
-        # return: pred_rgb: [B, N, 3]
-
-        # print("starting to render deformed...")
 
         if self.cuda_ray:
             _rund = self.rund_cuda
@@ -765,55 +761,58 @@ class NeRFRenderer(nn.Module):
     def get_pnts_in_grids(self, n_vtx, n_grid, p_def, bbmin, hgs, res):
 
         self.device = "cuda"
-        pig_idx = wp.array(shape=(n_vtx,), dtype=wp.int32, device=self.device)
-        pig_bgn = wp.array(shape=(n_grid,), dtype=wp.int32, device=self.device)
-        pig_cnt = wp.array(shape=(n_grid,), dtype=wp.int32, device=self.device)
-        pig_cnt.zero_()
+        pig_idx = torch.zeros((n_vtx,), dtype=torch.int32, device=self.device)
+        pig_bgn = torch.zeros((n_grid,), dtype=torch.int32, device=self.device)
+        pig_cnt = torch.zeros((n_grid,), dtype=torch.int32, device=self.device)
+        # pig_cnt.zero_()
         wp.launch(kernel=get_pig_cnt, dim=(n_vtx,),
                   inputs=[
+                      n_vtx, n_grid,
                       wp.from_torch(p_def, dtype=wp.vec3f),
-                      bbmin,
-                      hgs,
-                      res,
-                      pig_cnt
-                      ],
-                  device=self.device)
-        wp.synchronize()
-        # print(wp.to_torch(pig_cnt).min().item(), "~", wp.to_torch(pig_cnt).max().item()) # 27
-        # exit()
-        tot = wp.array(shape=(1,), dtype=wp.int32, device=self.device)
-        tot.zero_()
-        wp.launch(kernel=get_pig_bgn, dim=(n_grid,),
-                  inputs=[
-                      tot,
-                      pig_cnt,
-                      pig_bgn,
+                      bbmin, hgs, res,
+                      wp.from_torch(pig_cnt)
                       ],
                   device=self.device)
         # wp.synchronize()
-        # print(tot) # 7996
-        # print(wp.to_torch(pig_bgn).max()) # 7996
+        # print(wp.to_torch(pig_cnt).min().item(), "~", wp.to_torch(pig_cnt).max().item()) # 8
+        # print(pig_cnt.min().item(), "~", pig_cnt.max().item()) # 8
         # exit()
-        pig_tmp = wp.array(shape=(n_grid,), dtype=wp.int32, device=self.device)
-        wp.copy(pig_tmp, pig_cnt)
-        pig_tmp.zero_()
+
+        # tot = wp.array(shape=(1,), dtype=wp.int32, device=self.device)
+        # tot.zero_()
+        # wp.launch(kernel=get_pig_bgn, dim=(n_grid,),
+        #           inputs=[
+        #               tot,
+        #               wp.from_torch(pig_cnt),
+        #               wp.from_torch(pig_bgn),
+        #               ],
+        #           device=self.device)
+
+        pig_bgn = torch.cumsum(pig_cnt, dim=0, dtype=torch.int32) - pig_cnt
+
+        # wp.synchronize()
+        # print(tot) # 728
+        # print(wp.to_torch(pig_bgn).max()) # 728
+        # exit()
+        # pig_tmp = wp.array(shape=(n_grid,), dtype=wp.int32, device=self.device)
+        pig_tmp = torch.zeros_like(pig_cnt)
+        # pig_tmp.zero_()
         wp.launch(kernel=get_pig_idx, dim=(n_vtx,),
                   inputs=[
+                      n_vtx,
                       wp.from_torch(p_def, dtype=wp.vec3f),
                       bbmin,
                       hgs,
                       res,
-                      pig_tmp,
-                      pig_bgn,
-                      pig_idx,
+                      wp.from_torch(pig_tmp),
+                      wp.from_torch(pig_bgn),
+                      wp.from_torch(pig_idx),
                       ],
                   device=self.device)
-        return pig_cnt, pig_bgn, pig_idx, pig_tmp
+        return pig_cnt, pig_bgn, pig_idx
 
     def rund_cuda(self, rays_o, rays_d, dt_gamma=0, bg_color=None, perturb=False, max_steps=1024,
                  T_thresh=1e-2, **kwargs):
-        # rays_o, rays_d: [B, N, 3], assumes B == 1
-        # return: image: [B, N, 3], depth: [B, N]
 
         timing_on = kwargs.get('timing_on')
 
@@ -858,12 +857,10 @@ class NeRFRenderer(nn.Module):
         assert self.p_def.shape == self.p_ori.shape
         assert n_vtx > 0
 
-        # p_def = self.p_def.to(torch.float32).cuda().contiguous().view(-1, 3)
-        # p_ori = self.p_ori.to(torch.float32).cuda().contiguous().view(-1, 3)
-        # F_IP = self.IP_F
-        # dF_IP = self.IP_dF
-        # F_IP = torch.zeros(size=(n_vtx, 9), dtype=torch.float32, device=device)
-        # dF_IP = torch.zeros(size=(n_vtx, 27), dtype=torch.float32, device=device)
+        p_def = self.p_def.to(torch.float32).cuda().contiguous().view(-1, 3)
+        p_ori = self.p_ori.to(torch.float32).cuda().contiguous().view(-1, 3)
+        F_IP = self.IP_F.to(torch.float32).cuda().contiguous().view(-1, 9)
+        dF_IP = self.IP_dF.to(torch.float32).cuda().contiguous().view(-1, 27)
 
         bmin = p_def.min(dim=0).values
         bmax = p_def.max(dim=0).values
@@ -871,12 +868,10 @@ class NeRFRenderer(nn.Module):
         bmax = bmax.to(torch.float32).cuda()
         bbmin, bbmax = bmin * def_margin, bmax * def_margin  # give some margins to deformation
 
-
-        pig_cnt, pig_bgn, pig_idx, pig_tmp = self.get_pnts_in_grids(n_vtx, n_grid, p_def, bbmin, hgs, res)
-
-        pig_cnt = wp.to_torch(pig_cnt)
-        pig_bgn = wp.to_torch(pig_bgn)
-        pig_idx = wp.to_torch(pig_idx)
+        pig_cnt, pig_bgn, pig_idx = self.get_pnts_in_grids(n_vtx, n_grid, p_def, bbmin, hgs, res)
+        # print(pig_cnt.min().item(), "~", pig_cnt.max().item())
+        # print(pig_bgn.min().item(), "~", pig_bgn.max().item())
+        # print(pig_idx.min().item(), "~", pig_idx.max().item())
 
         n_alive = N
         rays_alive = torch.arange(n_alive, dtype=torch.int32, device=device)  # [N]
@@ -896,23 +891,23 @@ class NeRFRenderer(nn.Module):
             # decide compact_steps
             n_step = max(min(N // n_alive, 8), 1)
 
-            # xyzs, dirs, deltas = raymarching.march_rays_quadratic_bending(
-            #     pig_cnt, pig_bgn, pig_idx,
-            #     n_vtx, n_grid,
-            #     p_def, p_ori,
-            #     F_IP, dF_IP,
-            #     bbmin, hgs, res,
-            #     def_margin,
-            #
-            #     n_alive, n_step, rays_alive, rays_t, rays_o, rays_d,
-            #     self.bound, self.density_bitfield, self.cascade,
-            #     self.grid_size, nears, fars, 128,
-            #     perturb if step == 0 else False, dt_gamma, max_steps)
+            xyzs, dirs, deltas = raymarching.march_rays_quadratic_bending(
+                pig_cnt, pig_bgn, pig_idx,
+                n_vtx, n_grid,
+                p_def, p_ori,
+                F_IP, dF_IP,
+                bbmin, hgs, res,
+                def_margin,
+
+                n_alive, n_step, rays_alive, rays_t, rays_o, rays_d,
+                self.bound, self.density_bitfield, self.cascade,
+                self.grid_size, nears, fars, 128,
+                perturb if step == 0 else False, dt_gamma, max_steps)
             # 145 ms
 
-            xyzs, dirs, deltas = raymarching.march_rays(n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, self.bound,
-                                                        self.density_bitfield, self.cascade, self.grid_size, nears,
-                                                        fars, 128, perturb if step == 0 else False, dt_gamma, max_steps)
+            # xyzs, dirs, deltas = raymarching.march_rays(n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, self.bound,
+            #                                             self.density_bitfield, self.cascade, self.grid_size, nears,
+            #                                             fars, 128, perturb if step == 0 else False, dt_gamma, max_steps)
             # # 60 ms
 
             sigmas, rgbs = self(xyzs, dirs)
@@ -945,12 +940,15 @@ class NeRFRenderer(nn.Module):
 
 @wp.func
 def p2g(
+    n_vtx: wp.int32,
     pid: wp.int32,
     p_def: wp.array(dtype=wp.vec3f),
     bbmin: wp.vec3f,
     hgs: wp.float32,
     res: wp.float32,
 ):
+    if pid >= n_vtx:
+        print("!!!")
     p = p_def[pid]
     p = p - bbmin
     g0 = wp.floor(p[0]/hgs)
@@ -961,6 +959,8 @@ def p2g(
 
 @wp.kernel
 def get_pig_cnt(
+        n_vtx: wp.int32,
+        n_grid: wp.int32,
     p_def: wp.array(dtype=wp.vec3f),
     bbmin: wp.vec3f,
     hgs: wp.float32,
@@ -968,8 +968,9 @@ def get_pig_cnt(
     pig_cnt: wp.array(dtype=wp.int32),
 ):
     pid = wp.tid()
-    gid = p2g(pid, p_def, bbmin, hgs, res)
-    # print(gid)
+    gid = p2g(n_vtx, pid, p_def, bbmin, hgs, res)
+    if gid >= n_grid:
+       print("?")
     wp.atomic_add(pig_cnt, gid, wp.int32(1))
 
 @wp.kernel
@@ -983,6 +984,7 @@ def get_pig_bgn(
 
 @wp.kernel
 def get_pig_idx(
+        n_vtx: wp.int32,
         p_def: wp.array(dtype=wp.vec3f),
         bbmin: wp.vec3f,
         hgs: wp.float32,
@@ -992,6 +994,8 @@ def get_pig_idx(
         pig_idx: wp.array(dtype=wp.int32),
 ):
     pid = wp.tid()
-    gid = p2g(pid, p_def, bbmin, hgs, res)
+    gid = p2g(n_vtx, pid, p_def, bbmin, hgs, res)
     tmp = wp.atomic_add(pig_cnt, gid, wp.int32(1))
+    if pig_bgn[gid]+tmp >= n_vtx:
+        print("!")
     pig_idx[pig_bgn[gid]+tmp] = pid

@@ -58,18 +58,19 @@ if __name__ == '__main__':
         base=torch.tensor([-opt.bound, -opt.bound, -opt.bound])
     )
 
-    sim.InitializeFromPly("./assets/cube.ply")
+    sim.InitializeFromPly("./assets/" + opt.exp_name + ".ply")
 
     IP_pos, IP_F, IP_dF = sim.get_IP_info()
+    model.p_ori = IP_pos
     model.p_def = IP_pos
-    model.IP_F = IP_F
-    model.IP_dF = IP_dF
+    model.IP_F = IP_F.view(-1, 9)
+    model.IP_dF = IP_dF.view(-1, 27)
 
-    # with torch.no_grad():
-    #     gui = NeRFSimGUI(opt, trainer, sim)
-    #     # -> test_step -> test_gui -> test_step -> update_one_step
-    #
-    #     gui.render()
+    with torch.no_grad():
+        gui = NeRFSimGUI(opt, trainer, sim)
+        # -> test_step -> test_gui -> test_step -> update_one_step
+
+        gui.render()
 
 
 

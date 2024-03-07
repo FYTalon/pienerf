@@ -235,25 +235,30 @@ class UniformSampling:
                   ],
                   device=self.device)
 
-        print(grid_pts.shape[0])
-        print(pnts_add.shape[0])
-        print(pnts_add.min(dim=0).values, pnts_add.max(dim=0).values)
+        # print(grid_pts.shape[0])
+        # print(pnts_add.shape[0])
+        # print(pnts_add.min(dim=0).values, pnts_add.max(dim=0).values)
+
+        if not os.path.exists("./model"):
+            os.mkdir("./model")
+        write_path = "./model/" + opt.workspace.split("/")[-1] + "/" + self.opt.exp_name
+
         pts = pnts_add.clone()
         pts = torch.cat((pts, grid_pts), dim=0)
         density = self.get_density(pts)
         pts = pts[density > self.threshold]
-        write_ply(self.opt.exp_name + ".ply", pts)
+        write_ply(write_path + ".ply", pts)
 
-        pts = torch.cat((pnts_add, grid_pts), dim=0)
-        write_ply(self.opt.exp_name + "_2.ply", pts)
-
-        density = self.get_density(pnts_add)
-        pnts_add = pnts_add[density > self.threshold]
-        write_ply(self.opt.exp_name + "_add.ply", pnts_add)
-
-        density = self.get_density(grid_pts)
-        grid_pts = grid_pts[density > self.threshold]
-        write_ply(self.opt.exp_name + "_grid.ply", grid_pts)
+        # pts = torch.cat((pnts_add, grid_pts), dim=0)
+        # write_ply(write_path + "_2.ply", pts)
+        #
+        # density = self.get_density(pnts_add)
+        # pnts_add = pnts_add[density > self.threshold]
+        # write_ply(write_path + "_add.ply", pnts_add)
+        #
+        # density = self.get_density(grid_pts)
+        # grid_pts = grid_pts[density > self.threshold]
+        # write_ply(write_path + "_grid.ply", grid_pts)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -296,6 +301,6 @@ if __name__ == "__main__":
 
     UniformSampling(opt, model).sample()
 
-    # --dataset_type synthetic --workspace outputs/chair --exp_name chair
+    # --dataset_type synthetic --workspace model/chair --exp_name chair
 
 

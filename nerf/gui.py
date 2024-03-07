@@ -527,7 +527,7 @@ class NeRFSimGUI:
 
             outputs = self.trainer.test_gui(self.cam.pose, self.cam.intrinsics, self.W, self.H,
                                             self.bg_color, self.spp, self.downscale,
-                                            render_def=False,####
+                                            render_def=True,####
                                             gui_sim=True,
                                             solver=self.solver,
                                             frame=self.frame,

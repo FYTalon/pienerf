@@ -299,8 +299,8 @@ class Trainer(object):
 
             IP_pos, IP_F, IP_dF = solver.get_IP_info()
             self.model.p_def = IP_pos
-            self.model.IP_F = IP_F
-            self.model.IP_dF = IP_dF
+            self.model.IP_F = IP_F.view(-1, 9)
+            self.model.IP_dF = IP_dF.view(-1, 27)
 
             solver.stepforward()
             # print(time.time()-t)

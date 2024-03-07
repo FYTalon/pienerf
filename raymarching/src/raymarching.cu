@@ -1150,7 +1150,7 @@ __global__ void kernel_march_rays_quadratic_bending(
                     num_itr++;
                     if ((p_last[0]-p[0])*(p_last[0]-p[0]) + (p_last[1]-p[1])*(p_last[1]-p[1]) + (p_last[2]-p[2])*(p_last[2]-p[2]) < 1e-6)
                     {
-                        printf("converged itr=%i\n", num_itr);
+//                         printf("converged itr=%i\n", num_itr);
                         break;
                     }
                 }
