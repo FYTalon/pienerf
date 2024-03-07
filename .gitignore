@@ -7,3 +7,4 @@ build/
 outputs/
 *.ply
 point_cloud/
+debug/

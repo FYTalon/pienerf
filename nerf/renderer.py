@@ -822,10 +822,11 @@ class NeRFRenderer(nn.Module):
         bbmin = -self.bound * torch.ones(3, dtype=torch.float32) # debug
         bbmax = self.bound * torch.ones(3, dtype=torch.float32) # debug
 
-        bbox_mask = (p_def[:, 0] >= bbmin[0]) & (p_def[:, 0] <= bbmax[0]) & \
-                    (p_def[:, 1] >= bbmin[1]) & (p_def[:, 1] <= bbmax[1]) & \
-                    (p_def[:, 2] >= bbmin[2]) & (p_def[:, 2] <= bbmax[2])
-        p_def = p_def[bbox_mask]
+        bbox_mask = (p_def[:, 0] < bbmin[0]) & (p_def[:, 0] > bbmax[0]) & \
+                    (p_def[:, 1] < bbmin[1]) & (p_def[:, 1] > bbmax[1]) & \
+                    (p_def[:, 2] < bbmin[2]) & (p_def[:, 2] > bbmax[2])
+        # p_def[bbox_mask] = bbmin # outside bbox
+        p_def[bbox_mask] = torch.zeros(3, dtype=torch.float32) # outside bbox
         pig_cnt, pig_bgn, pig_idx = self.get_pnts_in_grids(n_vtx, n_grid, p_def, bbmin, bbmax, hgs, res)
         # # print(pig_cnt.min().item(), "~", pig_cnt.max().item())
         # # print(pig_bgn.min().item(), "~", pig_bgn.max().item())
@@ -849,27 +850,27 @@ class NeRFRenderer(nn.Module):
             # decide compact_steps
             n_step = max(min(N // n_alive, 8), 1)
 
-            xyzs, dirs, deltas = raymarching.march_rays_quadratic_bending(
-                pig_cnt, pig_bgn, pig_idx,
-                n_vtx, n_grid,
-                p_def, p_ori,
-                F_IP, dF_IP,
-                bbmin, hgs, res,
-                def_margin,
+            # xyzs, dirs, deltas = raymarching.march_rays_quadratic_bending(
+            #     pig_cnt, pig_bgn, pig_idx,
+            #     n_vtx, n_grid,
+            #     p_def, p_ori,
+            #     F_IP, dF_IP,
+            #     bbmin, hgs, res,
+            #     def_margin,
+            #
+            #     n_alive, n_step, rays_alive, rays_t, rays_o, rays_d,
+            #     self.bound, self.density_bitfield, self.cascade,
+            #     self.grid_size, nears, fars, 128,
+            #     perturb if step == 0 else False, dt_gamma, max_steps)
+            # # 145 ms
+            #
+            # print(p_def-p_ori)
+            # print("-"*100)
 
-                n_alive, n_step, rays_alive, rays_t, rays_o, rays_d,
-                self.bound, self.density_bitfield, self.cascade,
-                self.grid_size, nears, fars, 128,
-                perturb if step == 0 else False, dt_gamma, max_steps)
-            # 145 ms
-
-            print(p_def-p_ori)
-            print("-"*100)
-
-            # xyzs, dirs, deltas = raymarching.march_rays(n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, self.bound,
-            #                                             self.density_bitfield, self.cascade, self.grid_size, nears,
-            #                                             fars, 128, perturb if step == 0 else False, dt_gamma, max_steps)
-            # # 60 ms
+            xyzs, dirs, deltas = raymarching.march_rays(n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, self.bound,
+                                                        self.density_bitfield, self.cascade, self.grid_size, nears,
+                                                        fars, 128, perturb if step == 0 else False, dt_gamma, max_steps)
+            # 60 ms
 
             sigmas, rgbs = self(xyzs, dirs)
             sigmas, rgbs = sigmas.to(torch.float32), rgbs.to(torch.float32)

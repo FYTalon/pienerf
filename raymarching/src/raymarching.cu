@@ -1055,6 +1055,8 @@ __global__ void kernel_march_rays_quadratic_bending(
     const uint32_t n = threadIdx.x + blockIdx.x * blockDim.x;
     if (n >= n_alive) return;
 
+    printf("kernel_march_rays_quadratic_bending\n");
+
     const int index = rays_alive[n]; // ray id
     const float noise = noises[n];
 
@@ -1104,6 +1106,7 @@ __global__ void kernel_march_rays_quadratic_bending(
         float x_map, y_map, z_map;//final rest position
         int IPs[3] = {-1,-1,-1};
         int n_IP = find_three_IPs(g0, g1, g2, res, pig_cnt, pig_bgn, pig_idx, IPs);
+        printf("n_IP=%i\n", n_IP);
         if(n_IP == 0)
             found = false;
         else
@@ -1147,12 +1150,15 @@ __global__ void kernel_march_rays_quadratic_bending(
                     inv3x3(A, A_inv);
                     float p_last[3] = {p[0], p[1], p[2]};
                     mul31(A_inv, b, p);
-                    num_itr++;
                     if ((p_last[0]-p[0])*(p_last[0]-p[0]) + (p_last[1]-p[1])*(p_last[1]-p[1]) + (p_last[2]-p[2])*(p_last[2]-p[2]) < 1e-6)
                     {
-//                         printf("converged itr=%i\n", num_itr);
+                        printf("converged itr=%i\n", num_itr);
+                        x = p[0];
+                        y = p[1];
+                        z = p[2];
                         break;
                     }
+                    num_itr++;
                 }
             }
         }
