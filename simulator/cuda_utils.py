@@ -1,4 +1,4 @@
-from .func_utils import *
+from simulator.func_utils import *
 
 @wp.kernel
 def collect_param(
