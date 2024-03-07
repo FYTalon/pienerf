@@ -14,9 +14,9 @@ def collect_param(
 
     IP = topo[vid]
 
-    IP_mu[IP] += mu[vid] * mass[vid]
-    IP_lam[IP] += lam[vid] * mass[vid]
-    IP_rho[IP] += mass[vid]
+    wp.atomic_add(IP_mu, IP, mu[vid] * mass[vid])
+    wp.atomic_add(IP_lam, IP, lam[vid] * mass[vid])
+    wp.atomic_add(IP_rho, IP, mass[vid])
 
 
 @wp.kernel
