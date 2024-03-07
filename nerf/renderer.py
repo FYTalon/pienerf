@@ -758,7 +758,141 @@ class NeRFRenderer(nn.Module):
             'weights_sum': weights_sum,
         }
 
-    def get_pnts_in_grids(self, n_vtx, n_grid, p_def, bbmin, hgs, res):
+    def rund_cuda(self, rays_o, rays_d, dt_gamma=0, bg_color=None, perturb=False, max_steps=1024,
+                 T_thresh=1e-2, **kwargs):
+
+        timing_on = kwargs.get('timing_on')
+
+        prefix = rays_o.shape[:-1]
+        rays_o = rays_o.contiguous().view(-1, 3)
+        rays_d = rays_d.contiguous().view(-1, 3)
+
+        N = rays_o.shape[0]  # N = B * N, in fact
+        device = rays_o.device
+
+        # pre-calculate near far
+        aabb = self.aabb_train if self.training else self.aabb_infer
+        # print("aabb: ", self.aabb_infer)
+        def_margin = kwargs.get('def_margin')
+        bary_margin = kwargs.get('bary_margin')
+        query_cell_range = kwargs.get('query_cell_range')
+        res = kwargs.get('hash_grid_res') # int, ==16
+        hgs = 2 * self.bound / float(res)
+        if aabb[3] == self.bound: # apply only once
+            aabb *= def_margin
+        nears, fars = raymarching.near_far_from_aabb(rays_o, rays_d, aabb, self.min_near)
+
+        # mix background color
+        if self.bg_radius > 0:
+            # use the bg model to calculate bg_color
+            sph = raymarching.sph_from_ray(rays_o, rays_d, self.bg_radius)  # [N, 2] in [-1, 1]
+            bg_color = self.background(sph, rays_d)  # [N, 3]
+        elif bg_color is None:
+            bg_color = 1
+
+        results = {}
+
+        dtype = torch.float32
+
+        weights_sum = torch.zeros(N, dtype=dtype, device=device)
+        depth = torch.zeros(N, dtype=dtype, device=device)
+        image = torch.zeros(N, 3, dtype=dtype, device=device)
+
+        # bending begin###########################################################################################
+        p_def = self.p_def.to(torch.float32)
+        p_ori = self.p_ori.to(torch.float32)
+        F_IP = self.IP_F.to(torch.float32)
+        dF_IP = self.IP_dF.to(torch.float32)
+        # p_def = self.p_def.to(torch.float32).cuda().contiguous().view(-1, 3)
+        # p_ori = self.p_ori.to(torch.float32).cuda().contiguous().view(-1, 3)
+        # F_IP = self.IP_F.to(torch.float32).cuda().contiguous().view(-1, 9)
+        # dF_IP = self.IP_dF.to(torch.float32).cuda().contiguous().view(-1, 27)
+
+        n_vtx = self.p_ori.shape[0] # number of IPs
+        n_grid = res * res * res
+        assert p_def.shape == p_ori.shape
+        assert n_vtx > 0
+
+        bmin = p_def.min(dim=0).values
+        bmax = p_def.max(dim=0).values
+        bmin = bmin.to(torch.float32).cuda()
+        bmax = bmax.to(torch.float32).cuda()
+        bbmin, bbmax = bmin * def_margin, bmax * def_margin  # give some margins to deformation
+
+        bbmin = -2 * self.bound # debug
+        bbmax = 2 * self.bound # debug
+
+        pig_cnt, pig_bgn, pig_idx = self.get_pnts_in_grids(n_vtx, n_grid, p_def, bbmin, bbmax, hgs, res)
+        # # print(pig_cnt.min().item(), "~", pig_cnt.max().item())
+        # # print(pig_bgn.min().item(), "~", pig_bgn.max().item())
+        # # print(pig_idx.min().item(), "~", pig_idx.max().item())
+
+        n_alive = N
+        rays_alive = torch.arange(n_alive, dtype=torch.int32, device=device)  # [N]
+        rays_t = nears.clone()  # [N]
+
+        step = 0
+
+        while step < max_steps:
+
+            # count alive rays
+            n_alive = rays_alive.shape[0]
+
+            # exit loop
+            if n_alive <= 0:
+                break
+
+            # decide compact_steps
+            n_step = max(min(N // n_alive, 8), 1)
+
+            # xyzs, dirs, deltas = raymarching.march_rays_quadratic_bending(
+            #     pig_cnt, pig_bgn, pig_idx,
+            #     n_vtx, n_grid,
+            #     p_def, p_ori,
+            #     F_IP, dF_IP,
+            #     bbmin, hgs, res,
+            #     def_margin,
+            #
+            #     n_alive, n_step, rays_alive, rays_t, rays_o, rays_d,
+            #     self.bound, self.density_bitfield, self.cascade,
+            #     self.grid_size, nears, fars, 128,
+            #     perturb if step == 0 else False, dt_gamma, max_steps)
+            # # 145 ms
+
+            xyzs, dirs, deltas = raymarching.march_rays(n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, self.bound,
+                                                        self.density_bitfield, self.cascade, self.grid_size, nears,
+                                                        fars, 128, perturb if step == 0 else False, dt_gamma, max_steps)
+            # 60 ms
+
+            sigmas, rgbs = self(xyzs, dirs)
+            sigmas, rgbs = sigmas.to(torch.float32), rgbs.to(torch.float32)
+            sigmas = self.density_scale * sigmas
+
+            raymarching.composite_rays(
+                n_alive, n_step, rays_alive, rays_t,
+                sigmas, rgbs, deltas, weights_sum,
+                depth, image, T_thresh)
+
+            rays_alive = rays_alive[rays_alive >= 0]
+
+            # print(f'step = {step}, n_step = {n_step}, n_alive = {n_alive}, xyzs: {xyzs.shape}')
+
+            step += n_step
+
+        depth_0 = depth
+        image = image + (1 - weights_sum).unsqueeze(-1) * bg_color
+        depth = torch.clamp(depth - nears, min=0) / (fars - nears) # depth is nan when nears==fars==std::numeric_limits::max()
+        image = image.view(*prefix, 3)
+        depth = depth.view(*prefix)
+        depth_0 = depth_0.view(*prefix)
+
+        results['depth'] = depth
+        results['image'] = image
+        results['depth_0'] = depth_0
+
+        return results
+
+    def get_pnts_in_grids(self, n_vtx, n_grid, p_def, bbmin, bbmax, hgs, res):
 
         self.device = "cuda"
         pig_idx = torch.zeros((n_vtx,), dtype=torch.int32, device=self.device)
@@ -769,7 +903,8 @@ class NeRFRenderer(nn.Module):
                   inputs=[
                       n_vtx, n_grid,
                       wp.from_torch(p_def, dtype=wp.vec3f),
-                      bbmin, hgs, res,
+                      bbmin, bbmax,
+                      hgs, res,
                       wp.from_torch(pig_cnt)
                       ],
                   device=self.device)
@@ -800,6 +935,7 @@ class NeRFRenderer(nn.Module):
         wp.launch(kernel=get_pig_idx, dim=(n_vtx,),
                   inputs=[
                       n_vtx,
+                      n_grid,
                       wp.from_torch(p_def, dtype=wp.vec3f),
                       bbmin,
                       hgs,
@@ -811,150 +947,30 @@ class NeRFRenderer(nn.Module):
                   device=self.device)
         return pig_cnt, pig_bgn, pig_idx
 
-    def rund_cuda(self, rays_o, rays_d, dt_gamma=0, bg_color=None, perturb=False, max_steps=1024,
-                 T_thresh=1e-2, **kwargs):
-
-        timing_on = kwargs.get('timing_on')
-
-        prefix = rays_o.shape[:-1]
-        rays_o = rays_o.contiguous().view(-1, 3)
-        rays_d = rays_d.contiguous().view(-1, 3)
-
-        N = rays_o.shape[0]  # N = B * N, in fact
-        device = rays_o.device
-
-        # pre-calculate near far
-        aabb = self.aabb_train if self.training else self.aabb_infer
-        # print("aabb: ", self.aabb_infer)
-        def_margin = kwargs.get('def_margin')
-        bary_margin = kwargs.get('bary_margin')
-        query_cell_range = kwargs.get('query_cell_range')
-        res = kwargs.get('hash_grid_res')
-        hgs = 2 * self.bound / float(res)
-        if aabb[3] == self.bound: # apply only once
-            aabb *= def_margin
-        nears, fars = raymarching.near_far_from_aabb(rays_o, rays_d, aabb, self.min_near)
-
-        # mix background color
-        if self.bg_radius > 0:
-            # use the bg model to calculate bg_color
-            sph = raymarching.sph_from_ray(rays_o, rays_d, self.bg_radius)  # [N, 2] in [-1, 1]
-            bg_color = self.background(sph, rays_d)  # [N, 3]
-        elif bg_color is None:
-            bg_color = 1
-
-        results = {}
-
-        dtype = torch.float32
-
-        weights_sum = torch.zeros(N, dtype=dtype, device=device)
-        depth = torch.zeros(N, dtype=dtype, device=device)
-        image = torch.zeros(N, 3, dtype=dtype, device=device)
-
-        # bending begin###########################################################################################
-        n_vtx = self.p_ori.shape[0] # number of IPs
-        n_grid = res * res * res
-        assert self.p_def.shape == self.p_ori.shape
-        assert n_vtx > 0
-
-        p_def = self.p_def.to(torch.float32).cuda().contiguous().view(-1, 3)
-        p_ori = self.p_ori.to(torch.float32).cuda().contiguous().view(-1, 3)
-        F_IP = self.IP_F.to(torch.float32).cuda().contiguous().view(-1, 9)
-        dF_IP = self.IP_dF.to(torch.float32).cuda().contiguous().view(-1, 27)
-
-        bmin = p_def.min(dim=0).values
-        bmax = p_def.max(dim=0).values
-        bmin = bmin.to(torch.float32).cuda()
-        bmax = bmax.to(torch.float32).cuda()
-        bbmin, bbmax = bmin * def_margin, bmax * def_margin  # give some margins to deformation
-
-        pig_cnt, pig_bgn, pig_idx = self.get_pnts_in_grids(n_vtx, n_grid, p_def, bbmin, hgs, res)
-        # print(pig_cnt.min().item(), "~", pig_cnt.max().item())
-        # print(pig_bgn.min().item(), "~", pig_bgn.max().item())
-        # print(pig_idx.min().item(), "~", pig_idx.max().item())
-
-        n_alive = N
-        rays_alive = torch.arange(n_alive, dtype=torch.int32, device=device)  # [N]
-        rays_t = nears.clone()  # [N]
-
-        step = 0
-
-        while step < max_steps:
-
-            # count alive rays
-            n_alive = rays_alive.shape[0]
-
-            # exit loop
-            if n_alive <= 0:
-                break
-
-            # decide compact_steps
-            n_step = max(min(N // n_alive, 8), 1)
-
-            xyzs, dirs, deltas = raymarching.march_rays_quadratic_bending(
-                pig_cnt, pig_bgn, pig_idx,
-                n_vtx, n_grid,
-                p_def, p_ori,
-                F_IP, dF_IP,
-                bbmin, hgs, res,
-                def_margin,
-
-                n_alive, n_step, rays_alive, rays_t, rays_o, rays_d,
-                self.bound, self.density_bitfield, self.cascade,
-                self.grid_size, nears, fars, 128,
-                perturb if step == 0 else False, dt_gamma, max_steps)
-            # 145 ms
-
-            # xyzs, dirs, deltas = raymarching.march_rays(n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, self.bound,
-            #                                             self.density_bitfield, self.cascade, self.grid_size, nears,
-            #                                             fars, 128, perturb if step == 0 else False, dt_gamma, max_steps)
-            # # 60 ms
-
-            sigmas, rgbs = self(xyzs, dirs)
-            sigmas, rgbs = sigmas.to(torch.float32), rgbs.to(torch.float32)
-            sigmas = self.density_scale * sigmas
-
-            raymarching.composite_rays(
-                n_alive, n_step, rays_alive, rays_t,
-                sigmas, rgbs, deltas, weights_sum,
-                depth, image, T_thresh)
-
-            rays_alive = rays_alive[rays_alive >= 0]
-
-            # print(f'step = {step}, n_step = {n_step}, n_alive = {n_alive}, xyzs: {xyzs.shape}')
-
-            step += n_step
-
-        depth_0 = depth
-        image = image + (1 - weights_sum).unsqueeze(-1) * bg_color
-        depth = torch.clamp(depth - nears, min=0) / (fars - nears) # depth is nan when nears==fars==std::numeric_limits::max()
-        image = image.view(*prefix, 3)
-        depth = depth.view(*prefix)
-        depth_0 = depth_0.view(*prefix)
-
-        results['depth'] = depth
-        results['image'] = image
-        results['depth_0'] = depth_0
-
-        return results
 
 @wp.func
 def p2g(
     n_vtx: wp.int32,
+    n_grid: wp.int32,
     pid: wp.int32,
     p_def: wp.array(dtype=wp.vec3f),
     bbmin: wp.vec3f,
+    bbmax: wp.vec3f,
     hgs: wp.float32,
     res: wp.float32,
 ):
     if pid >= n_vtx:
-        print("!!!")
+        print("ERROR: p2g")
     p = p_def[pid]
     p = p - bbmin
+    if not p[0] >= 0 and p[1] >= 0 and p[2] >= 0:
+        print("ERROR: p2g, p < bbmin")
     g0 = wp.floor(p[0]/hgs)
     g1 = wp.floor(p[1]/hgs)
     g2 = wp.floor(p[2]/hgs)
     gid = wp.int32(g2 * res * res + g1 * res + g0)
+    if gid >= n_grid:
+        wp.printf("ERROR: p2g. gid=%i, n_grid=%i\n", gid, n_grid)
     return gid
 
 @wp.kernel
@@ -963,14 +979,15 @@ def get_pig_cnt(
         n_grid: wp.int32,
     p_def: wp.array(dtype=wp.vec3f),
     bbmin: wp.vec3f,
+    bbmax: wp.vec3f,
     hgs: wp.float32,
     res: wp.float32,
     pig_cnt: wp.array(dtype=wp.int32),
 ):
     pid = wp.tid()
-    gid = p2g(n_vtx, pid, p_def, bbmin, hgs, res)
+    gid = p2g(n_vtx, n_grid, pid, p_def, bbmin, bbmax, hgs, res)
     if gid >= n_grid:
-       print("?")
+       wp.printf("ERROR: get_pig_cnt, n_vtx=%i, pid=%i, gid=%i, n_grid=%i\n", n_vtx, pid, gid, n_grid)
     wp.atomic_add(pig_cnt, gid, wp.int32(1))
 
 @wp.kernel
@@ -985,6 +1002,7 @@ def get_pig_bgn(
 @wp.kernel
 def get_pig_idx(
         n_vtx: wp.int32,
+        n_grid: wp.int32,
         p_def: wp.array(dtype=wp.vec3f),
         bbmin: wp.vec3f,
         hgs: wp.float32,
@@ -994,8 +1012,8 @@ def get_pig_idx(
         pig_idx: wp.array(dtype=wp.int32),
 ):
     pid = wp.tid()
-    gid = p2g(n_vtx, pid, p_def, bbmin, hgs, res)
+    gid = p2g(n_vtx, n_grid, pid, p_def, bbmin, hgs, res)
     tmp = wp.atomic_add(pig_cnt, gid, wp.int32(1))
     if pig_bgn[gid]+tmp >= n_vtx:
-        print("!")
+        wp.printf("ERROR: get_pig_idx, gid=%i, pig_bgn[gid]=%i, tmp=%i, n_vtx=%i \n", gid, pig_bgn[gid], tmp, n_vtx)
     pig_idx[pig_bgn[gid]+tmp] = pid

@@ -239,15 +239,16 @@ class UniformSampling:
         # print(pnts_add.shape[0])
         # print(pnts_add.min(dim=0).values, pnts_add.max(dim=0).values)
 
-        if not os.path.exists("./model"):
-            os.mkdir("./model")
-        write_path = "./model/" + opt.workspace.split("/")[-1] + "/" + self.opt.exp_name
+        if not os.path.exists("../model"):
+            os.mkdir("../model")
+        write_path = "../model/" + opt.workspace.split("/")[-1] + "/" + self.opt.exp_name
 
         pts = pnts_add.clone()
-        pts = torch.cat((pts, grid_pts), dim=0)
+        pts = torch.cat((pts, grid_pts + 0.5 * 2 * self.opt.bound / float(self.res)), dim=0)
         density = self.get_density(pts)
         pts = pts[density > self.threshold]
         write_ply(write_path + ".ply", pts)
+        print("writing to ", os.path.abspath(write_path + ".ply"))
 
         # pts = torch.cat((pnts_add, grid_pts), dim=0)
         # write_ply(write_path + "_2.ply", pts)
@@ -285,7 +286,7 @@ if __name__ == "__main__":
         print("reading ckpt: ", checkpoint)
         opt.ckpt_path = checkpoint
     else:
-        print("no checkpoint found")
+        print("no checkpoint found, ckpt_path:", ckpt_path)
         exit(-1)
 
     model = NeRFNetwork(
@@ -301,6 +302,8 @@ if __name__ == "__main__":
 
     UniformSampling(opt, model).sample()
 
-    # --dataset_type synthetic --workspace model/chair --exp_name chair
+    # --dataset_type synthetic --workspace ../model/chair --exp_name chair_s --sub_coeff 0.15 --sub_res 25
+
+    # --dataset_type synthetic --workspace ../model/chair --exp_name chair --sub_coeff 0.55 --sub_res 60
 
 
