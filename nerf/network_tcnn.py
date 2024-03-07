@@ -1,11 +1,9 @@
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
 import numpy as np
 
 import tinycudann as tcnn
-from activation import trunc_exp
+from nerf.activation import trunc_exp
 from .renderer import NeRFRenderer
 
 

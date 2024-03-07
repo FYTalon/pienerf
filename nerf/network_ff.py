@@ -1,9 +1,7 @@
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
-from encoding import get_encoder
-from activation import trunc_exp
+from nerf.encoding import get_encoder
+from nerf.activation import trunc_exp
 from ffmlp import FFMLP
 
 from .renderer import NeRFRenderer
