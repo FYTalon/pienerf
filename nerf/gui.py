@@ -569,6 +569,7 @@ class NeRFSimGUI:
             dpg.set_value("_texture", self.render_buffer)
 
         if not self.paused:
+            self.paused = True ###################
             self.frame = self.frame + 1 ### added
 
     def screen_to_world(self, x, y):

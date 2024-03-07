@@ -799,10 +799,10 @@ class NeRFRenderer(nn.Module):
         image = torch.zeros(N, 3, dtype=dtype, device=device)
 
         # bending begin###########################################################################################
-        p_def = self.p_def.to(torch.float32)
-        p_ori = self.p_ori.to(torch.float32)
-        F_IP = self.IP_F.to(torch.float32)
-        dF_IP = self.IP_dF.to(torch.float32)
+        p_def = self.p_def.to(torch.float32).contiguous().view(-1, 3)
+        p_ori = self.p_ori.to(torch.float32).contiguous().view(-1, 3)
+        F_IP = self.IP_F.to(torch.float32).contiguous().view(-1, 9)
+        dF_IP = self.IP_dF.to(torch.float32).contiguous().view(-1, 27)
         # p_def = self.p_def.to(torch.float32).cuda().contiguous().view(-1, 3)
         # p_ori = self.p_ori.to(torch.float32).cuda().contiguous().view(-1, 3)
         # F_IP = self.IP_F.to(torch.float32).cuda().contiguous().view(-1, 9)
@@ -822,15 +822,14 @@ class NeRFRenderer(nn.Module):
         bbmin = -self.bound * torch.ones(3, dtype=torch.float32) # debug
         bbmax = self.bound * torch.ones(3, dtype=torch.float32) # debug
 
-        bbox_mask = (p_def[:, 0] < bbmin[0]) & (p_def[:, 0] > bbmax[0]) & \
-                    (p_def[:, 1] < bbmin[1]) & (p_def[:, 1] > bbmax[1]) & \
-                    (p_def[:, 2] < bbmin[2]) & (p_def[:, 2] > bbmax[2])
-        # p_def[bbox_mask] = bbmin # outside bbox
-        p_def[bbox_mask] = torch.zeros(3, dtype=torch.float32) # outside bbox
+        bbox_mask = (p_def[:, 0] < bbmin[0]) | (p_def[:, 0] > bbmax[0]) | \
+                    (p_def[:, 1] < bbmin[1]) | (p_def[:, 1] > bbmax[1]) | \
+                    (p_def[:, 2] < bbmin[2]) | (p_def[:, 2] > bbmax[2])
+        nan_mask = torch.isnan(p_def).any(dim=1) # nan to zero
+        p_def[bbox_mask | nan_mask] = torch.zeros(3, dtype=torch.float32) # outside bbox to zero
+        tmin, tmax = p_def.min(axis=0).values, p_def.max(axis=0).values
+        assert tmin[0] >= bbmin[0]
         pig_cnt, pig_bgn, pig_idx = self.get_pnts_in_grids(n_vtx, n_grid, p_def, bbmin, bbmax, hgs, res)
-        # # print(pig_cnt.min().item(), "~", pig_cnt.max().item())
-        # # print(pig_bgn.min().item(), "~", pig_bgn.max().item())
-        # # print(pig_idx.min().item(), "~", pig_idx.max().item())
 
         n_alive = N
         rays_alive = torch.arange(n_alive, dtype=torch.int32, device=device)  # [N]
@@ -850,27 +849,27 @@ class NeRFRenderer(nn.Module):
             # decide compact_steps
             n_step = max(min(N // n_alive, 8), 1)
 
-            # xyzs, dirs, deltas = raymarching.march_rays_quadratic_bending(
-            #     pig_cnt, pig_bgn, pig_idx,
-            #     n_vtx, n_grid,
-            #     p_def, p_ori,
-            #     F_IP, dF_IP,
-            #     bbmin, hgs, res,
-            #     def_margin,
-            #
-            #     n_alive, n_step, rays_alive, rays_t, rays_o, rays_d,
-            #     self.bound, self.density_bitfield, self.cascade,
-            #     self.grid_size, nears, fars, 128,
-            #     perturb if step == 0 else False, dt_gamma, max_steps)
-            # # 145 ms
-            #
+            xyzs, dirs, deltas = raymarching.march_rays_quadratic_bending(
+                pig_cnt, pig_bgn, pig_idx,
+                n_vtx, n_grid,
+                p_def, p_ori,
+                F_IP, dF_IP,
+                bbmin, hgs, res,
+                def_margin,
+
+                n_alive, n_step, rays_alive, rays_t, rays_o, rays_d,
+                self.bound, self.density_bitfield, self.cascade,
+                self.grid_size, nears, fars, 128,
+                perturb if step == 0 else False, dt_gamma, max_steps)
+            # 145 ms
+
             # print(p_def-p_ori)
             # print("-"*100)
 
-            xyzs, dirs, deltas = raymarching.march_rays(n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, self.bound,
-                                                        self.density_bitfield, self.cascade, self.grid_size, nears,
-                                                        fars, 128, perturb if step == 0 else False, dt_gamma, max_steps)
-            # 60 ms
+            # xyzs, dirs, deltas = raymarching.march_rays(n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, self.bound,
+            #                                             self.density_bitfield, self.cascade, self.grid_size, nears,
+            #                                             fars, 128, perturb if step == 0 else False, dt_gamma, max_steps)
+            # # 60 ms
 
             sigmas, rgbs = self(xyzs, dirs)
             sigmas, rgbs = sigmas.to(torch.float32), rgbs.to(torch.float32)
@@ -966,17 +965,19 @@ def p2g(
     bbmin: wp.vec3f,
     bbmax: wp.vec3f,
     hgs: wp.float32,
-    res: wp.float32,
+    resolution: wp.int32,
 ):
     p = p_def[pid]
+    if p[0] == wp.float32(0) and p[0] == wp.float32(0) and p[0] == wp.float32(0):
+        return -1
     if not (bbmin[0] <= p[0] <= bbmax[0] and bbmin[1] <= p[1] <= bbmax[1] and bbmin[2] <= p[2] <= bbmax[2]):
         wp.printf("ERROR: p2g, p < bbmin or p > bbmax, p:(%f,%f,%f), bbox:[%f,%f,%f]-[%f,%f,%f]\n",
                   p[0], p[1], p[2], bbmin[0], bbmin[1], bbmin[2], bbmax[0], bbmax[1], bbmax[2])
     p_ = p - bbmin
-    g0 = wp.floor(p_[0]/hgs)
-    g1 = wp.floor(p_[1]/hgs)
-    g2 = wp.floor(p_[2]/hgs)
-    gid = wp.int32(g2 * res * res + g1 * res + g0)
+    g0 = wp.int32(wp.floor(p_[0]/hgs))
+    g1 = wp.int32(wp.floor(p_[1]/hgs))
+    g2 = wp.int32(wp.floor(p_[2]/hgs))
+    gid = g2 * resolution * resolution + g1 * resolution + g0
     if gid >= n_grid:
         wp.printf("ERROR: p2g. gid=%i, n_grid=%i\n", gid, n_grid)
     return gid
@@ -989,14 +990,15 @@ def get_pig_cnt(
     bbmin: wp.vec3f,
     bbmax: wp.vec3f,
     hgs: wp.float32,
-    res: wp.float32,
+    res: wp.int32,
     pig_cnt: wp.array(dtype=wp.int32),
 ):
     pid = wp.tid()
     gid = p2g(n_vtx, n_grid, pid, p_def, bbmin, bbmax, hgs, res)
     # if gid >= n_grid:
     #    wp.printf("ERROR: get_pig_cnt, n_vtx=%i, pid=%i, gid=%i, n_grid=%i\n", n_vtx, pid, gid, n_grid)
-    wp.atomic_add(pig_cnt, gid, wp.int32(1))
+    if gid != -1:
+        wp.atomic_add(pig_cnt, gid, wp.int32(1))
 
 @wp.kernel
 def get_pig_bgn(
@@ -1015,14 +1017,15 @@ def get_pig_idx(
         bbmin: wp.vec3f,
         bbmax: wp.vec3f,
         hgs: wp.float32,
-        res: wp.float32,
+        res: wp.int32,
         pig_cnt: wp.array(dtype=wp.int32),
         pig_bgn: wp.array(dtype=wp.int32),
         pig_idx: wp.array(dtype=wp.int32),
 ):
     pid = wp.tid()
     gid = p2g(n_vtx, n_grid, pid, p_def, bbmin, bbmax, hgs, res)
-    tmp = wp.atomic_add(pig_cnt, gid, wp.int32(1))
-    # if pig_bgn[gid]+tmp >= n_vtx:
-    #     wp.printf("ERROR: get_pig_idx, gid=%i, pig_bgn[gid]=%i, tmp=%i, n_vtx=%i \n", gid, pig_bgn[gid], tmp, n_vtx)
-    pig_idx[pig_bgn[gid]+tmp] = pid
+    if gid != -1:
+        tmp = wp.atomic_add(pig_cnt, gid, wp.int32(1))
+        # if pig_bgn[gid]+tmp >= n_vtx:
+        #     wp.printf("ERROR: get_pig_idx, gid=%i, pig_bgn[gid]=%i, tmp=%i, n_vtx=%i \n", gid, pig_bgn[gid], tmp, n_vtx)
+        pig_idx[pig_bgn[gid]+tmp] = pid

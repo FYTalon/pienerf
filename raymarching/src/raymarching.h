@@ -19,10 +19,10 @@ void composite_rays(const uint32_t n_alive, const uint32_t n_step, const float T
 
 void march_rays_quadratic_bending(
     const at::Tensor pig_cnt, const at::Tensor pig_bgn, const at::Tensor pig_idx,
-    const uint32_t n_vtx, const uint32_t n_grid,
+    const int n_vtx, const int n_grid,
     const at::Tensor p_def, const at::Tensor p_ori,
     const at::Tensor F_IP, const at::Tensor dF_IP,
-    const at::Tensor bbmin, const float hgs, const float res,
+    const at::Tensor bbmin, const float hgs, const int resolution,
     const float def_margin,
 
     const uint32_t n_alive, const uint32_t n_step, const at::Tensor rays_alive,
