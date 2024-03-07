@@ -421,11 +421,11 @@ class _march_rays_quadratic_bending(Function):
             noises = torch.zeros(n_alive, dtype=rays_o.dtype, device=rays_o.device)
 
         _backend.march_rays_quadratic_bending(
-            pig_cnt, pig_bgn, pig_idx,
-            n_vtx, n_grid,
-            p_def, p_ori,
-            F_IP, dF_IP,
-            bbmin, hgs, res,
+            pig_cnt, pig_bgn, pig_idx, #012
+            n_vtx, n_grid, #34
+            p_def, p_ori, #56
+            F_IP, dF_IP, # 78
+            bbmin, hgs, res, # 9,10,11
             def_margin,
 
             n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, bound, dt_gamma, max_steps, C, H,

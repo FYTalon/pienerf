@@ -819,9 +819,13 @@ class NeRFRenderer(nn.Module):
         bmax = bmax.to(torch.float32).cuda()
         bbmin, bbmax = bmin * def_margin, bmax * def_margin  # give some margins to deformation
 
-        bbmin = -2 * self.bound # debug
-        bbmax = 2 * self.bound # debug
+        bbmin = -self.bound * torch.ones(3, dtype=torch.float32) # debug
+        bbmax = self.bound * torch.ones(3, dtype=torch.float32) # debug
 
+        bbox_mask = (p_def[:, 0] >= bbmin[0]) & (p_def[:, 0] <= bbmax[0]) & \
+                    (p_def[:, 1] >= bbmin[1]) & (p_def[:, 1] <= bbmax[1]) & \
+                    (p_def[:, 2] >= bbmin[2]) & (p_def[:, 2] <= bbmax[2])
+        p_def = p_def[bbox_mask]
         pig_cnt, pig_bgn, pig_idx = self.get_pnts_in_grids(n_vtx, n_grid, p_def, bbmin, bbmax, hgs, res)
         # # print(pig_cnt.min().item(), "~", pig_cnt.max().item())
         # # print(pig_bgn.min().item(), "~", pig_bgn.max().item())
@@ -845,24 +849,27 @@ class NeRFRenderer(nn.Module):
             # decide compact_steps
             n_step = max(min(N // n_alive, 8), 1)
 
-            # xyzs, dirs, deltas = raymarching.march_rays_quadratic_bending(
-            #     pig_cnt, pig_bgn, pig_idx,
-            #     n_vtx, n_grid,
-            #     p_def, p_ori,
-            #     F_IP, dF_IP,
-            #     bbmin, hgs, res,
-            #     def_margin,
-            #
-            #     n_alive, n_step, rays_alive, rays_t, rays_o, rays_d,
-            #     self.bound, self.density_bitfield, self.cascade,
-            #     self.grid_size, nears, fars, 128,
-            #     perturb if step == 0 else False, dt_gamma, max_steps)
-            # # 145 ms
+            xyzs, dirs, deltas = raymarching.march_rays_quadratic_bending(
+                pig_cnt, pig_bgn, pig_idx,
+                n_vtx, n_grid,
+                p_def, p_ori,
+                F_IP, dF_IP,
+                bbmin, hgs, res,
+                def_margin,
 
-            xyzs, dirs, deltas = raymarching.march_rays(n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, self.bound,
-                                                        self.density_bitfield, self.cascade, self.grid_size, nears,
-                                                        fars, 128, perturb if step == 0 else False, dt_gamma, max_steps)
-            # 60 ms
+                n_alive, n_step, rays_alive, rays_t, rays_o, rays_d,
+                self.bound, self.density_bitfield, self.cascade,
+                self.grid_size, nears, fars, 128,
+                perturb if step == 0 else False, dt_gamma, max_steps)
+            # 145 ms
+
+            print(p_def-p_ori)
+            print("-"*100)
+
+            # xyzs, dirs, deltas = raymarching.march_rays(n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, self.bound,
+            #                                             self.density_bitfield, self.cascade, self.grid_size, nears,
+            #                                             fars, 128, perturb if step == 0 else False, dt_gamma, max_steps)
+            # # 60 ms
 
             sigmas, rgbs = self(xyzs, dirs)
             sigmas, rgbs = sigmas.to(torch.float32), rgbs.to(torch.float32)
@@ -893,7 +900,7 @@ class NeRFRenderer(nn.Module):
         return results
 
     def get_pnts_in_grids(self, n_vtx, n_grid, p_def, bbmin, bbmax, hgs, res):
-
+        assert abs((bbmax-bbmin)[0] - hgs * float(res)) < 1e-15
         self.device = "cuda"
         pig_idx = torch.zeros((n_vtx,), dtype=torch.int32, device=self.device)
         pig_bgn = torch.zeros((n_grid,), dtype=torch.int32, device=self.device)
@@ -938,6 +945,7 @@ class NeRFRenderer(nn.Module):
                       n_grid,
                       wp.from_torch(p_def, dtype=wp.vec3f),
                       bbmin,
+                      bbmax,
                       hgs,
                       res,
                       wp.from_torch(pig_tmp),
@@ -959,15 +967,14 @@ def p2g(
     hgs: wp.float32,
     res: wp.float32,
 ):
-    if pid >= n_vtx:
-        print("ERROR: p2g")
     p = p_def[pid]
-    p = p - bbmin
-    if not p[0] >= 0 and p[1] >= 0 and p[2] >= 0:
-        print("ERROR: p2g, p < bbmin")
-    g0 = wp.floor(p[0]/hgs)
-    g1 = wp.floor(p[1]/hgs)
-    g2 = wp.floor(p[2]/hgs)
+    if not (bbmin[0] <= p[0] <= bbmax[0] and bbmin[1] <= p[1] <= bbmax[1] and bbmin[2] <= p[2] <= bbmax[2]):
+        wp.printf("ERROR: p2g, p < bbmin or p > bbmax, p:(%f,%f,%f), bbox:[%f,%f,%f]-[%f,%f,%f]\n",
+                  p[0], p[1], p[2], bbmin[0], bbmin[1], bbmin[2], bbmax[0], bbmax[1], bbmax[2])
+    p_ = p - bbmin
+    g0 = wp.floor(p_[0]/hgs)
+    g1 = wp.floor(p_[1]/hgs)
+    g2 = wp.floor(p_[2]/hgs)
     gid = wp.int32(g2 * res * res + g1 * res + g0)
     if gid >= n_grid:
         wp.printf("ERROR: p2g. gid=%i, n_grid=%i\n", gid, n_grid)
@@ -986,8 +993,8 @@ def get_pig_cnt(
 ):
     pid = wp.tid()
     gid = p2g(n_vtx, n_grid, pid, p_def, bbmin, bbmax, hgs, res)
-    if gid >= n_grid:
-       wp.printf("ERROR: get_pig_cnt, n_vtx=%i, pid=%i, gid=%i, n_grid=%i\n", n_vtx, pid, gid, n_grid)
+    # if gid >= n_grid:
+    #    wp.printf("ERROR: get_pig_cnt, n_vtx=%i, pid=%i, gid=%i, n_grid=%i\n", n_vtx, pid, gid, n_grid)
     wp.atomic_add(pig_cnt, gid, wp.int32(1))
 
 @wp.kernel
@@ -1005,6 +1012,7 @@ def get_pig_idx(
         n_grid: wp.int32,
         p_def: wp.array(dtype=wp.vec3f),
         bbmin: wp.vec3f,
+        bbmax: wp.vec3f,
         hgs: wp.float32,
         res: wp.float32,
         pig_cnt: wp.array(dtype=wp.int32),
@@ -1012,8 +1020,8 @@ def get_pig_idx(
         pig_idx: wp.array(dtype=wp.int32),
 ):
     pid = wp.tid()
-    gid = p2g(n_vtx, n_grid, pid, p_def, bbmin, hgs, res)
+    gid = p2g(n_vtx, n_grid, pid, p_def, bbmin, bbmax, hgs, res)
     tmp = wp.atomic_add(pig_cnt, gid, wp.int32(1))
-    if pig_bgn[gid]+tmp >= n_vtx:
-        wp.printf("ERROR: get_pig_idx, gid=%i, pig_bgn[gid]=%i, tmp=%i, n_vtx=%i \n", gid, pig_bgn[gid], tmp, n_vtx)
+    # if pig_bgn[gid]+tmp >= n_vtx:
+    #     wp.printf("ERROR: get_pig_idx, gid=%i, pig_bgn[gid]=%i, tmp=%i, n_vtx=%i \n", gid, pig_bgn[gid], tmp, n_vtx)
     pig_idx[pig_bgn[gid]+tmp] = pid
