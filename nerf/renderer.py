@@ -300,9 +300,7 @@ class NeRFRenderer(nn.Module):
             #plot_pointcloud(xyzs.reshape(-1, 3).detach().cpu().numpy())
             
             sigmas, rgbs = self(xyzs, dirs)
-            # density_outputs = self.density(xyzs) # [M,], use a dict since it may include extra things, like geo_feat for rgb.
-            # sigmas = density_outputs['sigma']
-            # rgbs = self.color(xyzs, dirs, **density_outputs)
+            sigmas, rgbs = sigmas.to(torch.float32), rgbs.to(torch.float32)
             sigmas = self.density_scale * sigmas
 
             #print(f'valid RGB query ratio: {mask.sum().item() / mask.shape[0]} (total = {mask.sum().item()})')
@@ -370,9 +368,7 @@ class NeRFRenderer(nn.Module):
                     dt_gamma, max_steps)
 
                 sigmas, rgbs = self(xyzs, dirs)
-                # density_outputs = self.density(xyzs) # [M,], use a dict since it may include extra things, like geo_feat for rgb.
-                # sigmas = density_outputs['sigma']
-                # rgbs = self.color(xyzs, dirs, **density_outputs)
+                sigmas, rgbs = sigmas.to(torch.float32), rgbs.to(torch.float32)
                 sigmas = self.density_scale * sigmas
 
                 raymarching.composite_rays(n_alive, n_step, rays_alive, rays_t, sigmas, rgbs, deltas, weights_sum, depth, image, T_thresh)
@@ -770,8 +766,8 @@ class NeRFRenderer(nn.Module):
 
         self.device = "cuda"
         pig_idx = wp.array(shape=(n_vtx,), dtype=wp.int32, device=self.device)
-        pig_bgn = wp.array(shape=(n_vtx,), dtype=wp.int32, device=self.device)
-        pig_cnt = wp.array(shape=(n_vtx,), dtype=wp.int32, device=self.device)
+        pig_bgn = wp.array(shape=(n_grid,), dtype=wp.int32, device=self.device)
+        pig_cnt = wp.array(shape=(n_grid,), dtype=wp.int32, device=self.device)
         pig_cnt.zero_()
         wp.launch(kernel=get_pig_cnt, dim=(n_vtx,),
                   inputs=[
@@ -782,8 +778,8 @@ class NeRFRenderer(nn.Module):
                       pig_cnt
                       ],
                   device=self.device)
-        # wp.synchronize()
-        # print(wp.to_torch(pig_cnt).max()) # 27
+        wp.synchronize()
+        # print(wp.to_torch(pig_cnt).min().item(), "~", wp.to_torch(pig_cnt).max().item()) # 27
         # exit()
         tot = wp.array(shape=(1,), dtype=wp.int32, device=self.device)
         tot.zero_()
@@ -798,7 +794,7 @@ class NeRFRenderer(nn.Module):
         # print(tot) # 7996
         # print(wp.to_torch(pig_bgn).max()) # 7996
         # exit()
-        pig_tmp = wp.array(shape=(n_vtx,), dtype=wp.int32, device=self.device)
+        pig_tmp = wp.array(shape=(n_grid,), dtype=wp.int32, device=self.device)
         wp.copy(pig_tmp, pig_cnt)
         pig_tmp.zero_()
         wp.launch(kernel=get_pig_idx, dim=(n_vtx,),
@@ -834,12 +830,6 @@ class NeRFRenderer(nn.Module):
         def_margin = kwargs.get('def_margin')
         bary_margin = kwargs.get('bary_margin')
         query_cell_range = kwargs.get('query_cell_range')
-        # cut_bounds = kwargs.get('cut_bound')
-        cut_bounds = torch.tensor([
-            kwargs.get('cb_x1'), kwargs.get('cb_x2'),
-            kwargs.get('cb_y1'), kwargs.get('cb_y2'),
-            kwargs.get('cb_z1'), kwargs.get('cb_z2')
-        ], dtype=torch.float32).cuda()
         res = kwargs.get('hash_grid_res')
         hgs = 2 * self.bound / float(res)
         if aabb[3] == self.bound: # apply only once
@@ -868,11 +858,12 @@ class NeRFRenderer(nn.Module):
         assert self.p_def.shape == self.p_ori.shape
         assert n_vtx > 0
 
-        p_def = self.p_def.to(torch.float32).cuda().contiguous().view(-1, 3)
-        p_ori = self.p_ori.to(torch.float32).cuda().contiguous().view(-1, 3)
-
-        F_IP = torch.zeros(size=(n_vtx, 9), dtype=torch.float32, device=device)
-        dF_IP = torch.zeros(size=(n_vtx, 27), dtype=torch.float32, device=device)
+        # p_def = self.p_def.to(torch.float32).cuda().contiguous().view(-1, 3)
+        # p_ori = self.p_ori.to(torch.float32).cuda().contiguous().view(-1, 3)
+        # F_IP = self.IP_F
+        # dF_IP = self.IP_dF
+        # F_IP = torch.zeros(size=(n_vtx, 9), dtype=torch.float32, device=device)
+        # dF_IP = torch.zeros(size=(n_vtx, 27), dtype=torch.float32, device=device)
 
         bmin = p_def.min(dim=0).values
         bmax = p_def.max(dim=0).values
@@ -925,7 +916,7 @@ class NeRFRenderer(nn.Module):
             # # 60 ms
 
             sigmas, rgbs = self(xyzs, dirs)
-
+            sigmas, rgbs = sigmas.to(torch.float32), rgbs.to(torch.float32)
             sigmas = self.density_scale * sigmas
 
             raymarching.composite_rays(

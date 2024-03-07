@@ -479,7 +479,7 @@ class NeRFSimGUI:
         self.rays_o = None
         self.rays_d = None
         self.sid = None
-        self.pts = self.solver.pos
+        self.pts = self.solver.IP_pos
 
         if self.show:
             dpg.create_context()
@@ -496,16 +496,9 @@ class NeRFSimGUI:
         else:
             return np.expand_dims(outputs['depth'], -1).repeat(3, -1)
 
-    # added
-    def update_render_buffer(self):
-        # outputs = self.trainer.test_gui(pose, intrinsics, W, H, bg_color, spp, downscale, render_def=render_def)
-        # self.render_buffer = self.prepare_buffer(outputs)
-        # self.need_update = True
-        pass
-
     def test_step(self):
 
-        self.pts = self.solver.pos
+        self.pts = self.solver.IP_pos
 
         if self.sid:
             x1, y1 = dpg.get_mouse_pos()
@@ -534,7 +527,7 @@ class NeRFSimGUI:
 
             outputs = self.trainer.test_gui(self.cam.pose, self.cam.intrinsics, self.W, self.H,
                                             self.bg_color, self.spp, self.downscale,
-                                            render_def=True,####
+                                            render_def=False,####
                                             gui_sim=True,
                                             solver=self.solver,
                                             frame=self.frame,

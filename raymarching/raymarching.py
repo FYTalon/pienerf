@@ -388,7 +388,6 @@ class _march_rays_quadratic_bending(Function):
     @staticmethod
     @custom_fwd(cast_inputs=torch.float32)
     def forward(ctx,
-
                 pig_cnt, pig_bgn, pig_idx,
                 n_vtx, n_grid,
                 p_def, p_ori,

@@ -6,8 +6,8 @@ from nerf.trainer import *
 from get_opts import *
 import warp as wp
 wp.init()
-wp.config.mode = "debug"
-wp.config.verify_cuda = True
+# wp.config.mode = "debug"
+# wp.config.verify_cuda = True
 from solver import Simulator
 
 os.environ['KMP_DUPLICATE_LIB_OK'] = '1'
@@ -49,27 +49,27 @@ if __name__ == '__main__':
     trainer = Trainer('ngp', opt, model,
                       device=device, workspace=opt.workspace, use_checkpoint=opt.ckpt)
 
-    if not os.path.exists("./outputs"):
-        os.mkdir("./outputs")
     sim = Simulator(
         dt=1e-2,
         iters=10,
-        res=torch.tensor([31, 3, 3]),
-        dx=0.1,
-        subspace=10,
+        bbox=torch.tensor([2*opt.bound, 2*opt.bound, 2*opt.bound]),
+        dx=0.05,
         stiff=1e7,
-        base=torch.tensor([0.05, 0.05, 0.05])
+        base=torch.tensor([-opt.bound, -opt.bound, -opt.bound])
     )
+
     sim.InitializeFromPly("./assets/cube.ply")
-    sim.OutputToPly("./outputs/0.ply")
 
-    model.p_ori = sim.pos
-    model.p_def = sim.pos
+    IP_pos, IP_F, IP_dF = sim.get_IP_info()
+    model.p_def = IP_pos
+    model.IP_F = IP_F
+    model.IP_dF = IP_dF
 
-    gui = NeRFSimGUI(opt, trainer, sim)
-    # -> test_step -> test_gui -> test_step -> update_one_step
-
-    gui.render()
+    # with torch.no_grad():
+    #     gui = NeRFSimGUI(opt, trainer, sim)
+    #     # -> test_step -> test_gui -> test_step -> update_one_step
+    #
+    #     gui.render()
 
 
 

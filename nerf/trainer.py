@@ -296,16 +296,17 @@ class Trainer(object):
 
         if gui_sim and not paused:
             # t = time.time()
+
+            IP_pos, IP_F, IP_dF = solver.get_IP_info()
+            self.model.p_def = IP_pos
+            self.model.IP_F = IP_F
+            self.model.IP_dF = IP_dF
+
             solver.stepforward()
-            pts = solver.pos
-            self.model.p_def = pts
             # print(time.time()-t)
 
 
         if render_def:
-            # print("trainer: ", **vars(self.opt))
-            # print("trainer: ", self.opt)
-
             outputs = self.model.render_deformed(rays_o, rays_d, staged=True, bg_color=bg_color, perturb=perturb, **vars(self.opt))
         else:
             outputs = self.model.render(rays_o, rays_d, staged=True, bg_color=bg_color, perturb=perturb, **vars(self.opt))
