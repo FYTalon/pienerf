@@ -9,8 +9,8 @@ import torch
 
 def main():
 
-    if not os.path.exists("./outputs"):
-        os.mkdir("./outputs")
+    if not os.path.exists("../outputs"):
+        os.mkdir("../outputs")
 
     sim = Simulator(
         dt=1e-2,

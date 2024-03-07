@@ -1,6 +1,3 @@
-import os
-from nerf.provider import NeRFDataset
-from nerf.gui import NeRFGUI
 from nerf.gui import NeRFSimGUI
 from nerf.trainer import *
 from get_opts import *
@@ -8,7 +5,7 @@ import warp as wp
 wp.init()
 # wp.config.mode = "debug"
 # wp.config.verify_cuda = True
-from solver import Simulator
+from simulator.solver import Simulator
 
 os.environ['KMP_DUPLICATE_LIB_OK'] = '1'
 

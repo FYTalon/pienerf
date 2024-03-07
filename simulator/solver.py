@@ -1,17 +1,12 @@
-import os.path
-
 import torch
 import warp as wp
-import warp.torch
-import warp.sparse as wps
 import numpy as np
 from plyfile import PlyData, PlyElement
 from kornia.utils.grid import create_meshgrid3d
 import cuda_utils
 import cpu_utils
-from cuda_utils import torchfloat, npfloat, wpfloat, vec3, vec10, vec8i, mat10, mat3
-import scipy
-from scipy.sparse import csc_matrix
+from cuda_utils import npfloat, wpfloat, vec3, vec10, mat10, mat3
+
 
 class Simulator:
     def __init__(
