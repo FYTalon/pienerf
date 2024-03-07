@@ -4,7 +4,7 @@ import time
 
 wp.init()
 
-from solver import Simulator
+from .solver import Simulator
 import torch
 
 def main():

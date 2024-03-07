@@ -1,4 +1,4 @@
-from func_utils import *
+from .func_utils import *
 
 @wp.kernel
 def calc_G(
