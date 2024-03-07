@@ -1,7 +1,7 @@
 import os
 import warp as wp
 import time
-
+os.environ['KMP_DUPLICATE_LIB_OK']='True'
 wp.init()
 
 from plyfile import PlyData, PlyElement
@@ -22,8 +22,8 @@ def main():
     sim = Simulator(
         dt=1e-2,
         iters=10,
-        bbox=torch.tensor([2, 2, 2]),
-        dx=0.1,
+        bbox=torch.tensor([5, 5, 5]),
+        dx=0.05,
         stiff=1e3,
         base=torch.tensor([-1, -1, -1])
     )

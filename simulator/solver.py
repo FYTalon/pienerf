@@ -1,3 +1,4 @@
+import scipy
 import torch
 import warp as wp
 import numpy as np
@@ -492,13 +493,11 @@ class Simulator:
                     lst.append(i * 30 + j)
 
         lst = torch.tensor(lst, dtype=torch.int32)
-
         mat = global_matrix[lst][:, lst]
-        mat = np.linalg.inv(mat.cpu().numpy())
-        mat = torch.from_numpy(mat).cuda()
-
+        L, D, _ = scipy.linalg.ldl(mat.cpu().numpy(), lower=True, hermitian=False)
+        L = torch.from_numpy(np.linalg.inv(L)).cuda()
         tmp = torch.zeros((dimension * 3, lst.size(0))).cuda()
-        tmp[lst] = mat
+        tmp[lst] = L.permute(1, 0) @ torch.from_numpy(D).cuda().inverse() @ L
         self.global_matrix[:, lst] = tmp
 
         wp_mat = wp.zeros(shape=(dimension, dimension), dtype=wpfloat)
@@ -582,6 +581,10 @@ class Simulator:
         dof_last = self.dof.clone()
         for it in range(self.iters):
             rhs = momentum + self.build_rhs() - self.rhs_rest
+            # x = torch.zeros_like(rhs)
+            # tmp = self.L @ (rhs[self.lst].view(-1, 1))
+            # tmp /= self.D
+            # x[self.lst] = (self.L.permute(1, 0) @ tmp).squeeze()
             x = self.global_matrix @ rhs
             self.dof = self.dof_rest + x
         self.dof_vel = (self.dof - dof_last) / self.dt * 0.998
