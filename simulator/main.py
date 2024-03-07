@@ -21,17 +21,16 @@ def main():
         base=torch.tensor([-0.5, -0.5, -0.5])
     )
 
-    sim.InitializeFromPly("./assets/chair_s.ply")
+    sim.InitializeFromPly("../assets/chair_s.ply")
 
-    sim.OutputToPly("./outputs/0.ply")
+    sim.OutputToPly("../outputs/0.ply")
 
     cost = time.time()
 
     with torch.no_grad():
         for i in range(1, 1001):
-
             sim.stepforward()
-            sim.OutputToPly(f"./outputs/{i}.ply")
+            sim.OutputToPly(f"../outputs/{i}.ply")
     print(time.time() - cost)
 
 if __name__ == "__main__":

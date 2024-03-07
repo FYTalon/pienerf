@@ -819,8 +819,8 @@ class NeRFRenderer(nn.Module):
         bmax = bmax.to(torch.float32).cuda()
         bbmin, bbmax = bmin * def_margin, bmax * def_margin  # give some margins to deformation
 
-        bbmin = -2 * self.bound # debug
-        bbmax = 2 * self.bound # debug
+        bbmin = -self.bound # debug
+        bbmax = self.bound # debug
 
         pig_cnt, pig_bgn, pig_idx = self.get_pnts_in_grids(n_vtx, n_grid, p_def, bbmin, bbmax, hgs, res)
         # # print(pig_cnt.min().item(), "~", pig_cnt.max().item())
@@ -893,7 +893,7 @@ class NeRFRenderer(nn.Module):
         return results
 
     def get_pnts_in_grids(self, n_vtx, n_grid, p_def, bbmin, bbmax, hgs, res):
-
+        assert abs((bbmax-bbmin) - hgs * float(res)) < 1e-15
         self.device = "cuda"
         pig_idx = torch.zeros((n_vtx,), dtype=torch.int32, device=self.device)
         pig_bgn = torch.zeros((n_grid,), dtype=torch.int32, device=self.device)
@@ -938,6 +938,7 @@ class NeRFRenderer(nn.Module):
                       n_grid,
                       wp.from_torch(p_def, dtype=wp.vec3f),
                       bbmin,
+                      bbmax,
                       hgs,
                       res,
                       wp.from_torch(pig_tmp),
@@ -959,12 +960,11 @@ def p2g(
     hgs: wp.float32,
     res: wp.float32,
 ):
-    if pid >= n_vtx:
-        print("ERROR: p2g")
     p = p_def[pid]
     p = p - bbmin
-    if not p[0] >= 0 and p[1] >= 0 and p[2] >= 0:
-        print("ERROR: p2g, p < bbmin")
+    bbox = bbmax - bbmin
+    if not (0 <= p[0] <= bbox[0] and 0 <= p[1] <= bbox[1] and 0 <= p[2] <= bbox[2]):
+        wp.printf("ERROR: p2g, p < bbmin or p > bbmax, p:(%f,%f,%f)\n", p[0], p[1], p[2])
     g0 = wp.floor(p[0]/hgs)
     g1 = wp.floor(p[1]/hgs)
     g2 = wp.floor(p[2]/hgs)
@@ -986,8 +986,8 @@ def get_pig_cnt(
 ):
     pid = wp.tid()
     gid = p2g(n_vtx, n_grid, pid, p_def, bbmin, bbmax, hgs, res)
-    if gid >= n_grid:
-       wp.printf("ERROR: get_pig_cnt, n_vtx=%i, pid=%i, gid=%i, n_grid=%i\n", n_vtx, pid, gid, n_grid)
+    # if gid >= n_grid:
+    #    wp.printf("ERROR: get_pig_cnt, n_vtx=%i, pid=%i, gid=%i, n_grid=%i\n", n_vtx, pid, gid, n_grid)
     wp.atomic_add(pig_cnt, gid, wp.int32(1))
 
 @wp.kernel
@@ -1005,6 +1005,7 @@ def get_pig_idx(
         n_grid: wp.int32,
         p_def: wp.array(dtype=wp.vec3f),
         bbmin: wp.vec3f,
+        bbmax: wp.vec3f,
         hgs: wp.float32,
         res: wp.float32,
         pig_cnt: wp.array(dtype=wp.int32),
@@ -1012,8 +1013,8 @@ def get_pig_idx(
         pig_idx: wp.array(dtype=wp.int32),
 ):
     pid = wp.tid()
-    gid = p2g(n_vtx, n_grid, pid, p_def, bbmin, hgs, res)
+    gid = p2g(n_vtx, n_grid, pid, p_def, bbmin, bbmax, hgs, res)
     tmp = wp.atomic_add(pig_cnt, gid, wp.int32(1))
-    if pig_bgn[gid]+tmp >= n_vtx:
-        wp.printf("ERROR: get_pig_idx, gid=%i, pig_bgn[gid]=%i, tmp=%i, n_vtx=%i \n", gid, pig_bgn[gid], tmp, n_vtx)
+    # if pig_bgn[gid]+tmp >= n_vtx:
+    #     wp.printf("ERROR: get_pig_idx, gid=%i, pig_bgn[gid]=%i, tmp=%i, n_vtx=%i \n", gid, pig_bgn[gid], tmp, n_vtx)
     pig_idx[pig_bgn[gid]+tmp] = pid
