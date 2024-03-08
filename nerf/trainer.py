@@ -303,20 +303,17 @@ class Trainer(object):
             self.model.IP_F = IP_F
             self.model.IP_dF = IP_dF
 
-            bmin = IP_pos.min(axis=0).values.cpu().numpy()
-            bmax = IP_pos.max(axis=0).values.cpu().numpy()
-            print(f"frame={self.frame}, bbox:{bmin}~{bmax}")
-            if (np.abs(bmin) > 1e6).any():
-                exit()
             solver.stepforward()
-            # print(time.time()-t)
+            # print("timing: simulate :", time.time()-t)
 
             self.frame += 1
             if output_ply:
                 solver.OutputToPly(f"./outputs_gui/{frame}.ply")
 
         if render_def:
+            # t = time.time()
             outputs = self.model.render_deformed(rays_o, rays_d, staged=True, bg_color=bg_color, perturb=perturb, **vars(self.opt))
+            # print("timing: render :", time.time() - t)
         else:
             outputs = self.model.render(rays_o, rays_d, staged=True, bg_color=bg_color, perturb=perturb, **vars(self.opt))
 

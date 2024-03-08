@@ -1043,10 +1043,8 @@ __global__ void kernel_march_rays_quadratic_bending(
     const int max_iter_num,
     const float* __restrict__ bbmin,
     const float* __restrict__ bbmax,
-    const float hgs,
+    const float* __restrict__ hgs,
     const int resolution,
-
-    const float def_margin,
 
     const uint32_t n_alive,
     const uint32_t n_step,
@@ -1097,39 +1095,30 @@ __global__ void kernel_march_rays_quadratic_bending(
 
     float last_t = t;
 
-//     const float margined_bound = def_margin * bound;
-    const float margined_bound = bound;
-
     while (t < far && step < n_step)
     {
         bool found = true;
 
-        float x = clamp(ox + t * dx, -margined_bound, margined_bound);
-        float y = clamp(oy + t * dy, -margined_bound, margined_bound);
-        float z = clamp(oz + t * dz, -margined_bound, margined_bound);
+        float x = clamp(ox + t * dx, bbmin[0], bbmax[0]);
+        float y = clamp(oy + t * dy, bbmin[1], bbmax[1]);
+        float z = clamp(oz + t * dz, bbmin[2], bbmax[2]);
 
         //raybending-------------kernel_march_rays_qb-----------------------------------------------------------------
         float x_map = 0.0;
         float y_map = 0.0;
         float z_map = 0.0;
-        int g0 = floor((x - bbmin[0])/hgs);
-        int g1 = floor((y - bbmin[1])/hgs);
-        int g2 = floor((z - bbmin[2])/hgs);
+        int g0 = floor((x - bbmin[0])/hgs[0]);
+        int g1 = floor((y - bbmin[1])/hgs[1]);
+        int g2 = floor((z - bbmin[2])/hgs[2]);
         if (g0 == resolution)  g0 = resolution-1;
         if (g1 == resolution)  g1 = resolution-1;
         if (g2 == resolution)  g2 = resolution-1;
         if (g0 < 0 || g1 < 0 ||g2 < 0 || g0 >= resolution || g1 >= resolution ||g2 >= resolution)
             printf("ERROR: g0=%i, g1=%i, g2=%i, xyz:(%f,%f,%f), bbmin:(%f,%f,%f)\n", g0, g1, g2, x, y, z, bbmin[0], bbmin[1], bbmin[2]);
         int gid = g2 * resolution * resolution + g1 * resolution + g0;
-        if (gid < 0 || gid >= n_grid)
-            printf("ERROR: g0=%i, g1=%i, g2=%i, gid=%i, n_grid=%i\n", g0, g1, g2, gid, n_grid);
+
         int IPs[3] = {-1,-1,-1};
-//         printf("IPs: %i,%i,%i\n", IPs[0], IPs[1], IPs[2]);
-
         int n_IP = find_three_IPs(n_grid, g0, g1, g2, resolution, pig_cnt, pig_bgn, pig_idx, IPs);
-//         printf("IPs[0]: %i\n", IPs[0]);
-//         printf("IPs: %i,%i,%i, n_IP=%i\n", IPs[0], IPs[1], IPs[2], n_IP);
-
         if(n_IP == 0)
             found = false;
         else
@@ -1144,7 +1133,6 @@ __global__ void kernel_march_rays_quadratic_bending(
             }
         }
         if(n_IP == 0)
-//         if(n_IP != 3)
             found = false;
         if(found)
         {
@@ -1195,34 +1183,8 @@ __global__ void kernel_march_rays_quadratic_bending(
                 minus(p_, pk_, q_);
                 while(num_itr < max_iter_num)
                 {
-//                     // left hand side
-//                     float A[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-//                     float dF_x[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};//dF dot x
-//                     dot31(dFk, p, dF_x);
-//                     float dF_xk[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};//dF dot xk
-//                     dot31(dFk, pk, dF_xk);
-//                     for(int j=0; j<9; j++)
-//                     {
-//                         A[j] = Fk[j] + 0.5 * dF_x[j] - dF_xk[j];
-//                     }
-//                     // right hand side
-//                     float b[3] = {0.0, 0.0, 0.0};
-//                     float F_xk[3] = {0.0, 0.0, 0.0};//F * xk
-//                     mul31(Fk, pk, F_xk);
-//                     float dF_xk_xk[3] = {0.0, 0.0, 0.0};
-//                     mul31(dF_xk, pk, dF_xk_xk);
-//                     for(int i=0; i<3; i++)
-//                     {
-//                         b[i] = p_[i] - pk_[i] + F_xk[i] - 0.5 * dF_xk_xk[i];
-//                     }
-//                     float A_inv[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-//                     inv3x3(A, A_inv);
-//                     float p_last[3] = {p[0], p[1], p[2]};
-//                     mul31(A_inv, b, p);
-
                     float q[3] = {0.0, 0.0, 0.0};
                     minus(p, pk, q);
-
 
                     float dFk_q[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}; // dF dot q
                     dot31(dFk, q, dFk_q);
@@ -1252,33 +1214,26 @@ __global__ void kernel_march_rays_quadratic_bending(
                     p[1] -= dq[1];
                     p[2] -= dq[2];
 
-//                     if (dq[0]*dq[0] + dq[1]*dq[1] + dq[2]*dq[2] < 1e-6)
+                    if (dq[0]*dq[0] + dq[1]*dq[1] + dq[2]*dq[2] < 1e-6)
                     {
-//                         if (num_itr>3)
-//                             printf("converged itr=%i\n", num_itr);
-                        x_map += ip_weight[k] * p[0];
-                        y_map += ip_weight[k] * p[1];
-                        z_map += ip_weight[k] * p[2];
                         break;
                     }
+
                     num_itr++;
-                }
+                }//end while
+                x_map += ip_weight[k] * p[0];
+                y_map += ip_weight[k] * p[1];
+                z_map += ip_weight[k] * p[2];
                 itr_sum += num_itr;
             }//end for(int k=0; k<n_IP; k++)
             if(itr_sum > 100)
                 printf("(%f,%f,%f): n_IP=%i, itr_sum=%i\n", x, y, z, n_IP, itr_sum);
 
-//             printf("(%f,%f,%f)->(%f,%f,%f)\n", x, y, z, x_map, y_map, z_map);
             x = x_map;
             y = y_map;
             z = z_map;
 
         }//end if(found)
-        else // not found
-        {
-
-        }
-
 
         //end raybending--------------------------------------------------------------------------------
 
@@ -1287,7 +1242,7 @@ __global__ void kernel_march_rays_quadratic_bending(
         // get mip level
         const int level = max(mip_from_pos(x, y, z, C), mip_from_dt(dt, H, C)); // range in [0, C - 1]
 
-        const float mip_bound = fminf(scalbnf(1, level), margined_bound);
+        const float mip_bound = fminf(scalbnf(1, level), bound);
         const float mip_rbound = 1 / mip_bound;
 
         // convert to nearest grid position
@@ -1329,8 +1284,8 @@ __global__ void kernel_march_rays_quadratic_bending(
             do {
                 t += clamp(t * dt_gamma, dt_min, dt_max);
             } while (t < tt);
-        }
-    }
+        }//end if (occ && found)
+    }//end while
 }
 
 void march_rays_quadratic_bending(
@@ -1340,8 +1295,7 @@ void march_rays_quadratic_bending(
     const at::Tensor F_IP, const at::Tensor dF_IP,
     const int max_iter_num,
     const at::Tensor bbmin, const at::Tensor bbmax,
-    const float hgs, const int resolution,
-    const float def_margin,
+    const at::Tensor hgs, const int resolution,
 
     const uint32_t n_alive, const uint32_t n_step, const at::Tensor rays_alive,
     const at::Tensor rays_t, const at::Tensor rays_o, const at::Tensor rays_d,
@@ -1366,8 +1320,7 @@ void march_rays_quadratic_bending(
             F_IP.data_ptr<float>(), dF_IP.data_ptr<float>(),
             max_iter_num,
             bbmin.data_ptr<float>(), bbmax.data_ptr<float>(),
-            hgs, resolution,
-            def_margin,
+            hgs.data_ptr<float>(), resolution,
 
             n_alive, n_step, rays_alive.data_ptr<int>(),
             rays_t.data_ptr<float>(), rays_o.data_ptr<float>(), rays_d.data_ptr<float>(),

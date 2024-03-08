@@ -78,7 +78,7 @@ def get_shared_opts(parser):
     parser.add_argument('--render_interval', type=int, default=1)
     parser.add_argument('--render_offset', type=int, default=0)
     parser.add_argument('--dataset_type', type=str, default="")# --scale 0.8 --bound 1.0 --dt_gamma 0.0 --W 800 --H 800
-    parser.add_argument('--def_margin', type=float, default=1.0)
+    # parser.add_argument('--def_margin', type=float, default=1.0)
     parser.add_argument('--bary_margin', type=float, default=2.5)
     parser.add_argument('--query_cell_range', type=int, default=1)
     # parser.add_argument('--hash_grid_size', type=float, default=0.01)

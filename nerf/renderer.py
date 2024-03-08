@@ -636,10 +636,6 @@ class NeRFRenderer(nn.Module):
         # generate xyzs
         xyzs = rays_o.unsqueeze(-2) + rays_d.unsqueeze(-2) * z_vals.unsqueeze(-1)  # [N, 1, 3] * [N, T, 1] -> [N, T, 3]
 
-        num_rays = kwargs.get('num_rays')
-        bound = kwargs.get('bound')
-        def_margin = kwargs.get('def_margin')
-
         # plot_pointcloud(xyzs.reshape(-1, 3).detach().cpu().numpy())
 
         xyzs = torch.min(torch.max(xyzs, aabb[:3]), aabb[3:])  # a manual clip.
@@ -762,6 +758,7 @@ class NeRFRenderer(nn.Module):
                  T_thresh=1e-2, **kwargs):
 
         timing_on = kwargs.get('timing_on')
+        logtime = time.time()
 
         prefix = rays_o.shape[:-1]
         rays_o = rays_o.contiguous().view(-1, 3)
@@ -772,15 +769,20 @@ class NeRFRenderer(nn.Module):
 
         # pre-calculate near far
         aabb = self.aabb_train if self.training else self.aabb_infer
-        # print("aabb: ", self.aabb_infer)
-        def_margin = kwargs.get('def_margin')
-        bary_margin = kwargs.get('bary_margin')
-        query_cell_range = kwargs.get('query_cell_range')
+
         max_iter_num = kwargs.get('max_iter_num')
         res = kwargs.get('hash_grid_res') # int, ==16
-        hgs = 2 * self.bound / float(res)
-        if aabb[3] == self.bound: # apply only once
-            aabb *= def_margin
+
+        p_def = self.p_def.to(torch.float32).contiguous()
+        p_ori = self.p_ori.to(torch.float32).contiguous()
+        F_IP = self.IP_F.to(torch.float32).contiguous()
+        dF_IP = self.IP_dF.to(torch.float32).contiguous()
+        marg = 2 * self.bound / float(res)
+        bbmin = p_def.min(axis=0).values - marg * torch.ones(3, dtype=torch.float32)
+        bbmax = p_def.max(axis=0).values + marg * torch.ones(3, dtype=torch.float32)
+        hgs = (bbmax - bbmin) / float(res)
+
+        aabb = torch.cat((bbmin, bbmax), dim=0)
         nears, fars = raymarching.near_far_from_aabb(rays_o, rays_d, aabb, self.min_near)
 
         # mix background color
@@ -800,37 +802,29 @@ class NeRFRenderer(nn.Module):
         image = torch.zeros(N, 3, dtype=dtype, device=device)
 
         # bending begin###########################################################################################
-        p_def = self.p_def.to(torch.float32).contiguous()
-        p_ori = self.p_ori.to(torch.float32).contiguous()
-        F_IP = self.IP_F.to(torch.float32).contiguous()
-        dF_IP = self.IP_dF.to(torch.float32).contiguous()
-        # p_def = self.p_def.to(torch.float32).cuda().contiguous().view(-1, 3)
-        # p_ori = self.p_ori.to(torch.float32).cuda().contiguous().view(-1, 3)
-        # F_IP = self.IP_F.to(torch.float32).cuda().contiguous().view(-1, 9)
-        # dF_IP = self.IP_dF.to(torch.float32).cuda().contiguous().view(-1, 27)
 
+        res = kwargs.get('hash_grid_res')  # int, ==16
         n_vtx = self.p_ori.shape[0] # number of IPs
         n_grid = res * res * res
         assert p_def.shape == p_ori.shape
         assert n_vtx > 0
 
-        bmin = p_def.min(dim=0).values
-        bmax = p_def.max(dim=0).values
-        bmin = bmin.to(torch.float32).cuda()
-        bmax = bmax.to(torch.float32).cuda()
-        bbmin, bbmax = bmin * def_margin, bmax * def_margin  # give some margins to deformation
-
-        bbmin = -self.bound * torch.ones(3, dtype=torch.float32) # debug
-        bbmax = self.bound * torch.ones(3, dtype=torch.float32) # debug
-
-        bbox_mask = (p_def[:, 0] < bbmin[0]) | (p_def[:, 0] > bbmax[0]) | \
-                    (p_def[:, 1] < bbmin[1]) | (p_def[:, 1] > bbmax[1]) | \
-                    (p_def[:, 2] < bbmin[2]) | (p_def[:, 2] > bbmax[2])
-        nan_mask = torch.isnan(p_def).any(dim=1) # nan to zero
+        # bbmin = -self.bound * torch.ones(3, dtype=torch.float32) # debug
+        # bbmax = self.bound * torch.ones(3, dtype=torch.float32) # debug
+        # bbox_mask = (p_def[:, 0] < bbmin[0]) | (p_def[:, 0] > bbmax[0]) | \
+        #             (p_def[:, 1] < bbmin[1]) | (p_def[:, 1] > bbmax[1]) | \
+        #             (p_def[:, 2] < bbmin[2]) | (p_def[:, 2] > bbmax[2])
+        # nan_mask = torch.isnan(p_def).any(dim=1) # nan to zero
         # p_def[bbox_mask | nan_mask] = torch.zeros(3, dtype=torch.float32) # outside bbox to zero
-        # tmin, tmax = p_def.min(axis=0).values, p_def.max(axis=0).values
-        # assert tmin[0] >= bbmin[0]
+
+
         pig_cnt, pig_bgn, pig_idx = self.get_pnts_in_grids(n_vtx, n_grid, p_def, bbmin, bbmax, hgs, res)
+
+        # print(f"bbox:{bbmin.cpu().numpy()}~{bbmax.cpu().numpy()}")
+
+        if timing_on:
+            print("timing: prepare : ", time.time() - logtime) # 0.002
+            logtime = time.time()
 
         n_alive = N
         rays_alive = torch.arange(n_alive, dtype=torch.int32, device=device)  # [N]
@@ -857,16 +851,12 @@ class NeRFRenderer(nn.Module):
                 F_IP, dF_IP,
                 max_iter_num,
                 bbmin, bbmax, hgs, res,
-                def_margin,
 
                 n_alive, n_step, rays_alive, rays_t, rays_o, rays_d,
                 self.bound, self.density_bitfield, self.cascade,
                 self.grid_size, nears, fars, 128,
                 perturb if step == 0 else False, dt_gamma, max_steps)
             # 145 ms
-
-            # print(p_def-p_ori)
-            # print("-"*100)
 
             # xyzs, dirs, deltas = raymarching.march_rays(n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, self.bound,
             #                                             self.density_bitfield, self.cascade, self.grid_size, nears,
@@ -888,6 +878,10 @@ class NeRFRenderer(nn.Module):
 
             step += n_step
 
+        if timing_on:
+            print("timing: bending : ", time.time() - logtime)  # 0.002
+            logtime = time.time()
+
         depth_0 = depth
         image = image + (1 - weights_sum).unsqueeze(-1) * bg_color
         depth = torch.clamp(depth - nears, min=0) / (fars - nears) # depth is nan when nears==fars==std::numeric_limits::max()
@@ -902,7 +896,7 @@ class NeRFRenderer(nn.Module):
         return results
 
     def get_pnts_in_grids(self, n_vtx, n_grid, p_def, bbmin, bbmax, hgs, res):
-        assert abs((bbmax-bbmin)[0] - hgs * float(res)) < 1e-15
+        assert abs((bbmax-bbmin)[0] - hgs[0] * float(res)) < 1e-15
         self.device = "cuda"
         pig_idx = torch.zeros((n_vtx,), dtype=torch.int32, device=self.device)
         pig_cnt = torch.zeros((n_grid,), dtype=torch.int32, device=self.device)
@@ -911,7 +905,7 @@ class NeRFRenderer(nn.Module):
                       n_vtx, n_grid,
                       wp.from_torch(p_def, dtype=wp.vec3f),
                       bbmin, bbmax,
-                      hgs, res,
+                      wp.from_torch(hgs), res,
                       wp.from_torch(pig_cnt)
                       ],
                   device=self.device)
@@ -934,7 +928,7 @@ class NeRFRenderer(nn.Module):
                       wp.from_torch(p_def, dtype=wp.vec3f),
                       bbmin,
                       bbmax,
-                      hgs,
+                      wp.from_torch(hgs),
                       res,
                       wp.from_torch(pig_tmp),
                       wp.from_torch(pig_bgn),
@@ -952,20 +946,16 @@ def p2g(
     p_def: wp.array(dtype=wp.vec3f),
     bbmin: wp.vec3f,
     bbmax: wp.vec3f,
-    hgs: wp.float32,
+    hgs: wp.array(dtype=wp.float32),
     resolution: wp.int32,
 ):
     p = p_def[pid]
-    # if p[0] == wp.float32(0) and p[0] == wp.float32(0) and p[0] == wp.float32(0):
-    #     return -1
     if not (bbmin[0] <= p[0] <= bbmax[0] and bbmin[1] <= p[1] <= bbmax[1] and bbmin[2] <= p[2] <= bbmax[2]):
         return -1
-        # wp.printf("ERROR: p2g, p < bbmin or p > bbmax, p:(%f,%f,%f), bbox:[%f,%f,%f]-[%f,%f,%f]\n",
-        #           p[0], p[1], p[2], bbmin[0], bbmin[1], bbmin[2], bbmax[0], bbmax[1], bbmax[2])
     p_ = p - bbmin
-    g0 = wp.int32(wp.floor(p_[0]/hgs))
-    g1 = wp.int32(wp.floor(p_[1]/hgs))
-    g2 = wp.int32(wp.floor(p_[2]/hgs))
+    g0 = wp.int32(wp.floor(p_[0]/hgs[0]))
+    g1 = wp.int32(wp.floor(p_[1]/hgs[1]))
+    g2 = wp.int32(wp.floor(p_[2]/hgs[2]))
     gid = g2 * resolution * resolution + g1 * resolution + g0
     if gid >= n_grid:
         wp.printf("ERROR: p2g. gid=%i, n_grid=%i\n", gid, n_grid)
@@ -978,7 +968,7 @@ def get_pig_cnt(
         p_def: wp.array(dtype=wp.vec3f),
         bbmin: wp.vec3f,
         bbmax: wp.vec3f,
-        hgs: wp.float32,
+        hgs: wp.array(dtype=wp.float32),
         res: wp.int32,
         pig_cnt: wp.array(dtype=wp.int32),
 ):
@@ -996,7 +986,7 @@ def get_pig_idx(
         p_def: wp.array(dtype=wp.vec3f),
         bbmin: wp.vec3f,
         bbmax: wp.vec3f,
-        hgs: wp.float32,
+        hgs: wp.array(dtype=wp.float32),
         res: wp.int32,
         pig_cnt: wp.array(dtype=wp.int32),
         pig_bgn: wp.array(dtype=wp.int32),
