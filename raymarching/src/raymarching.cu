@@ -927,7 +927,13 @@ void composite_rays(const uint32_t n_alive, const uint32_t n_step, const float T
 /////////////  inference with bending   ////////////
 ////////////////////////////////////////////////////
 
-__device__ double dot(const double* a, const double* b) {
+__device__ double minus(const float* a, const float* b, float* c) {
+    c[0] = a[0] - b[0];
+    c[1] = a[1] - b[1];
+    c[2] = a[2] - b[2];
+}
+
+__device__ double dot(const float* a, const float* b) {
     return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 }
 
@@ -1185,33 +1191,68 @@ __global__ void kernel_march_rays_quadratic_bending(
                 const float* dFk = &dF_IP[IPs[k] * 27];
                 float p[3] = {pk[0], pk[1], pk[2]};//initial rest position, using deformed position as initial guess
                 int num_itr = 0;
+                float q_[3] = {0.0, 0.0, 0.0};
+                minus(p_, pk_, q_);
                 while(num_itr < max_iter_num)
                 {
-                    // left hand side
+//                     // left hand side
+//                     float A[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+//                     float dF_x[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};//dF dot x
+//                     dot31(dFk, p, dF_x);
+//                     float dF_xk[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};//dF dot xk
+//                     dot31(dFk, pk, dF_xk);
+//                     for(int j=0; j<9; j++)
+//                     {
+//                         A[j] = Fk[j] + 0.5 * dF_x[j] - dF_xk[j];
+//                     }
+//                     // right hand side
+//                     float b[3] = {0.0, 0.0, 0.0};
+//                     float F_xk[3] = {0.0, 0.0, 0.0};//F * xk
+//                     mul31(Fk, pk, F_xk);
+//                     float dF_xk_xk[3] = {0.0, 0.0, 0.0};
+//                     mul31(dF_xk, pk, dF_xk_xk);
+//                     for(int i=0; i<3; i++)
+//                     {
+//                         b[i] = p_[i] - pk_[i] + F_xk[i] - 0.5 * dF_xk_xk[i];
+//                     }
+//                     float A_inv[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+//                     inv3x3(A, A_inv);
+//                     float p_last[3] = {p[0], p[1], p[2]};
+//                     mul31(A_inv, b, p);
+
+                    float q[3] = {0.0, 0.0, 0.0};
+                    minus(p, pk, q);
+
+
+                    float dFk_q[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}; // dF dot q
+                    dot31(dFk, q, dFk_q);
                     float A[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-                    float dF_x[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};//dF dot x
-                    dot31(dFk, p, dF_x);
-                    float dF_xk[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};//dF dot xk
-                    dot31(dFk, pk, dF_xk);
                     for(int j=0; j<9; j++)
                     {
-                        A[j] = Fk[j] + 0.5 * dF_x[j] - dF_xk[j];
-                    }
-                    // right hand side
-                    float b[3] = {0.0, 0.0, 0.0};
-                    float F_xk[3] = {0.0, 0.0, 0.0};//F * xk
-                    mul31(Fk, pk, F_xk);
-                    float dF_xk_xk[3] = {0.0, 0.0, 0.0};
-                    mul31(dF_xk, pk, dF_xk_xk);
-                    for(int i=0; i<3; i++)
-                    {
-                        b[i] = p_[i] - pk_[i] + F_xk[i] - 0.5 * dF_xk_xk[i];
+                        A[j] = Fk[j] + dFk_q[j];
                     }
                     float A_inv[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
                     inv3x3(A, A_inv);
-                    float p_last[3] = {p[0], p[1], p[2]};
-                    mul31(A_inv, b, p);
-                    if ((p_last[0]-p[0])*(p_last[0]-p[0]) + (p_last[1]-p[1])*(p_last[1]-p[1]) + (p_last[2]-p[2])*(p_last[2]-p[2]) < 1e-6)
+
+                    float b[3] = {0.0, 0.0, 0.0};
+                    float Fk_q[3] = {0.0, 0.0, 0.0};
+                    mul31(Fk, q, Fk_q);
+                    float dFk_q_q[3] = {0.0, 0.0, 0.0}; // dF dot q dot q
+                    mul31(dFk_q, q, dFk_q_q);
+
+                    for(int i=0; i<3; i++)
+                    {
+                        b[i] = Fk_q[i] + 0.5 * dFk_q_q[i] - q_[i];
+                    }
+
+                    float dq[3] = {0.0, 0.0, 0.0};
+                    mul31(A_inv, b, dq);
+
+                    p[0] -= dq[0];
+                    p[1] -= dq[1];
+                    p[2] -= dq[2];
+
+//                     if (dq[0]*dq[0] + dq[1]*dq[1] + dq[2]*dq[2] < 1e-6)
                     {
 //                         if (num_itr>3)
 //                             printf("converged itr=%i\n", num_itr);
@@ -1226,9 +1267,12 @@ __global__ void kernel_march_rays_quadratic_bending(
             }//end for(int k=0; k<n_IP; k++)
             if(itr_sum > 100)
                 printf("(%f,%f,%f): n_IP=%i, itr_sum=%i\n", x, y, z, n_IP, itr_sum);
+
+//             printf("(%f,%f,%f)->(%f,%f,%f)\n", x, y, z, x_map, y_map, z_map);
             x = x_map;
             y = y_map;
             z = z_map;
+
         }//end if(found)
         else // not found
         {
