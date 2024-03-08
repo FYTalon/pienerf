@@ -1034,8 +1034,9 @@ __global__ void kernel_march_rays_quadratic_bending(
     const float* __restrict__ p_def, // deformed positions of IPs
     const float* __restrict__ F_IP, // deformation gradients at IPs
     const float* __restrict__ dF_IP, // nabla deformation gradients at IPs
-
+    const int max_iter_num,
     const float* __restrict__ bbmin,
+    const float* __restrict__ bbmax,
     const float hgs,
     const int resolution,
 
@@ -1129,6 +1130,18 @@ __global__ void kernel_march_rays_quadratic_bending(
             found = true;
         if(found)
         {
+            for(int k=0; k<n_IP; k++)
+            {
+                const float* pk_ = &p_def[IPs[k] * 3];
+                if (pk_[0] <= bbmin[0] || pk_[1] <= bbmin[1] || pk_[2] < bbmin[2] || pk_[0] >= bbmax[0] || pk_[1] >= bbmax[1] || pk_[2] >= bbmax[2])
+                    n_IP--;
+            }
+        }
+        if(n_IP == 0)
+//         if(n_IP != 3)
+            found = false;
+        if(found)
+        {
             float ip_weight[3] = {0.0, 0.0, 0.0};
             if (n_IP == 1)
             {
@@ -1159,7 +1172,7 @@ __global__ void kernel_march_rays_quadratic_bending(
                 ip_weight[1] = dist[0] * dist[2] / dist_sum;
                 ip_weight[2] = dist[0] * dist[1] / dist_sum;
             }
-
+            int itr_sum = 0;
             const float p_[3] = {x, y, z};//deformed position
             for(int k=0; k<n_IP; k++)
             {
@@ -1172,7 +1185,7 @@ __global__ void kernel_march_rays_quadratic_bending(
                 const float* dFk = &dF_IP[IPs[k] * 27];
                 float p[3] = {pk[0], pk[1], pk[2]};//initial rest position, using deformed position as initial guess
                 int num_itr = 0;
-                while(num_itr < 10)
+                while(num_itr < max_iter_num)
                 {
                     // left hand side
                     float A[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
@@ -1207,17 +1220,16 @@ __global__ void kernel_march_rays_quadratic_bending(
                         z_map += ip_weight[k] * p[2];
                         break;
                     }
-//                     if (num_itr>3)
-//                         printf("itr=%i\n", num_itr);
                     num_itr++;
                 }
-
-
-//                     x = p[0];
-//                     y = p[1];
-//                     z = p[2];
-            }
-        }
+                itr_sum += num_itr;
+            }//end for(int k=0; k<n_IP; k++)
+            if(itr_sum > 100)
+                printf("(%f,%f,%f): n_IP=%i, itr_sum=%i\n", x, y, z, n_IP, itr_sum);
+            x = x_map;
+            y = y_map;
+            z = z_map;
+        }//end if(found)
         else // not found
         {
 
@@ -1282,7 +1294,9 @@ void march_rays_quadratic_bending(
     const int n_vtx, const int n_grid,
     const at::Tensor p_def, const at::Tensor p_ori,
     const at::Tensor F_IP, const at::Tensor dF_IP,
-    const at::Tensor bbmin, const float hgs, const int resolution,
+    const int max_iter_num,
+    const at::Tensor bbmin, const at::Tensor bbmax,
+    const float hgs, const int resolution,
     const float def_margin,
 
     const uint32_t n_alive, const uint32_t n_step, const at::Tensor rays_alive,
@@ -1306,7 +1320,9 @@ void march_rays_quadratic_bending(
             n_vtx, n_grid,
             p_ori.data_ptr<float>(), p_def.data_ptr<float>(),
             F_IP.data_ptr<float>(), dF_IP.data_ptr<float>(),
-            bbmin.data_ptr<float>(), hgs, resolution,
+            max_iter_num,
+            bbmin.data_ptr<float>(), bbmax.data_ptr<float>(),
+            hgs, resolution,
             def_margin,
 
             n_alive, n_step, rays_alive.data_ptr<int>(),

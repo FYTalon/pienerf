@@ -776,6 +776,7 @@ class NeRFRenderer(nn.Module):
         def_margin = kwargs.get('def_margin')
         bary_margin = kwargs.get('bary_margin')
         query_cell_range = kwargs.get('query_cell_range')
+        max_iter_num = kwargs.get('max_iter_num')
         res = kwargs.get('hash_grid_res') # int, ==16
         hgs = 2 * self.bound / float(res)
         if aabb[3] == self.bound: # apply only once
@@ -799,10 +800,10 @@ class NeRFRenderer(nn.Module):
         image = torch.zeros(N, 3, dtype=dtype, device=device)
 
         # bending begin###########################################################################################
-        p_def = self.p_def.to(torch.float32).contiguous().view(-1, 3)
-        p_ori = self.p_ori.to(torch.float32).contiguous().view(-1, 3)
-        F_IP = self.IP_F.to(torch.float32).contiguous().view(-1, 9)
-        dF_IP = self.IP_dF.to(torch.float32).contiguous().view(-1, 27)
+        p_def = self.p_def.to(torch.float32).contiguous()
+        p_ori = self.p_ori.to(torch.float32).contiguous()
+        F_IP = self.IP_F.to(torch.float32).contiguous()
+        dF_IP = self.IP_dF.to(torch.float32).contiguous()
         # p_def = self.p_def.to(torch.float32).cuda().contiguous().view(-1, 3)
         # p_ori = self.p_ori.to(torch.float32).cuda().contiguous().view(-1, 3)
         # F_IP = self.IP_F.to(torch.float32).cuda().contiguous().view(-1, 9)
@@ -826,9 +827,9 @@ class NeRFRenderer(nn.Module):
                     (p_def[:, 1] < bbmin[1]) | (p_def[:, 1] > bbmax[1]) | \
                     (p_def[:, 2] < bbmin[2]) | (p_def[:, 2] > bbmax[2])
         nan_mask = torch.isnan(p_def).any(dim=1) # nan to zero
-        p_def[bbox_mask | nan_mask] = torch.zeros(3, dtype=torch.float32) # outside bbox to zero
-        tmin, tmax = p_def.min(axis=0).values, p_def.max(axis=0).values
-        assert tmin[0] >= bbmin[0]
+        # p_def[bbox_mask | nan_mask] = torch.zeros(3, dtype=torch.float32) # outside bbox to zero
+        # tmin, tmax = p_def.min(axis=0).values, p_def.max(axis=0).values
+        # assert tmin[0] >= bbmin[0]
         pig_cnt, pig_bgn, pig_idx = self.get_pnts_in_grids(n_vtx, n_grid, p_def, bbmin, bbmax, hgs, res)
 
         n_alive = N
@@ -854,7 +855,8 @@ class NeRFRenderer(nn.Module):
                 n_vtx, n_grid,
                 p_def, p_ori,
                 F_IP, dF_IP,
-                bbmin, hgs, res,
+                max_iter_num,
+                bbmin, bbmax, hgs, res,
                 def_margin,
 
                 n_alive, n_step, rays_alive, rays_t, rays_o, rays_d,
@@ -903,9 +905,7 @@ class NeRFRenderer(nn.Module):
         assert abs((bbmax-bbmin)[0] - hgs * float(res)) < 1e-15
         self.device = "cuda"
         pig_idx = torch.zeros((n_vtx,), dtype=torch.int32, device=self.device)
-        pig_bgn = torch.zeros((n_grid,), dtype=torch.int32, device=self.device)
         pig_cnt = torch.zeros((n_grid,), dtype=torch.int32, device=self.device)
-        # pig_cnt.zero_()
         wp.launch(kernel=get_pig_cnt, dim=(n_vtx,),
                   inputs=[
                       n_vtx, n_grid,
@@ -920,25 +920,13 @@ class NeRFRenderer(nn.Module):
         # print(pig_cnt.min().item(), "~", pig_cnt.max().item()) # 8
         # exit()
 
-        # tot = wp.array(shape=(1,), dtype=wp.int32, device=self.device)
-        # tot.zero_()
-        # wp.launch(kernel=get_pig_bgn, dim=(n_grid,),
-        #           inputs=[
-        #               tot,
-        #               wp.from_torch(pig_cnt),
-        #               wp.from_torch(pig_bgn),
-        #               ],
-        #           device=self.device)
-
         pig_bgn = torch.cumsum(pig_cnt, dim=0, dtype=torch.int32) - pig_cnt
 
         # wp.synchronize()
         # print(tot) # 728
         # print(wp.to_torch(pig_bgn).max()) # 728
         # exit()
-        # pig_tmp = wp.array(shape=(n_grid,), dtype=wp.int32, device=self.device)
         pig_tmp = torch.zeros_like(pig_cnt)
-        # pig_tmp.zero_()
         wp.launch(kernel=get_pig_idx, dim=(n_vtx,),
                   inputs=[
                       n_vtx,
@@ -968,11 +956,12 @@ def p2g(
     resolution: wp.int32,
 ):
     p = p_def[pid]
-    if p[0] == wp.float32(0) and p[0] == wp.float32(0) and p[0] == wp.float32(0):
-        return -1
+    # if p[0] == wp.float32(0) and p[0] == wp.float32(0) and p[0] == wp.float32(0):
+    #     return -1
     if not (bbmin[0] <= p[0] <= bbmax[0] and bbmin[1] <= p[1] <= bbmax[1] and bbmin[2] <= p[2] <= bbmax[2]):
-        wp.printf("ERROR: p2g, p < bbmin or p > bbmax, p:(%f,%f,%f), bbox:[%f,%f,%f]-[%f,%f,%f]\n",
-                  p[0], p[1], p[2], bbmin[0], bbmin[1], bbmin[2], bbmax[0], bbmax[1], bbmax[2])
+        return -1
+        # wp.printf("ERROR: p2g, p < bbmin or p > bbmax, p:(%f,%f,%f), bbox:[%f,%f,%f]-[%f,%f,%f]\n",
+        #           p[0], p[1], p[2], bbmin[0], bbmin[1], bbmin[2], bbmax[0], bbmax[1], bbmax[2])
     p_ = p - bbmin
     g0 = wp.int32(wp.floor(p_[0]/hgs))
     g1 = wp.int32(wp.floor(p_[1]/hgs))
@@ -986,12 +975,12 @@ def p2g(
 def get_pig_cnt(
         n_vtx: wp.int32,
         n_grid: wp.int32,
-    p_def: wp.array(dtype=wp.vec3f),
-    bbmin: wp.vec3f,
-    bbmax: wp.vec3f,
-    hgs: wp.float32,
-    res: wp.int32,
-    pig_cnt: wp.array(dtype=wp.int32),
+        p_def: wp.array(dtype=wp.vec3f),
+        bbmin: wp.vec3f,
+        bbmax: wp.vec3f,
+        hgs: wp.float32,
+        res: wp.int32,
+        pig_cnt: wp.array(dtype=wp.int32),
 ):
     pid = wp.tid()
     gid = p2g(n_vtx, n_grid, pid, p_def, bbmin, bbmax, hgs, res)
@@ -999,15 +988,6 @@ def get_pig_cnt(
     #    wp.printf("ERROR: get_pig_cnt, n_vtx=%i, pid=%i, gid=%i, n_grid=%i\n", n_vtx, pid, gid, n_grid)
     if gid != -1:
         wp.atomic_add(pig_cnt, gid, wp.int32(1))
-
-@wp.kernel
-def get_pig_bgn(
-        tot: wp.array(dtype=wp.int32),
-        pig_cnt: wp.array(dtype=wp.int32),
-        pig_bgn: wp.array(dtype=wp.int32),
-):
-    gid = wp.tid()
-    pig_bgn[gid] = wp.atomic_add(tot, wp.int32(0), pig_cnt[gid])
 
 @wp.kernel
 def get_pig_idx(

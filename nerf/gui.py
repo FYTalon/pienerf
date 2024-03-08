@@ -445,7 +445,7 @@ class NeRFGUI:
 
 
 class NeRFSimGUI:
-    def __init__(self, opt, trainer, sim, train_loader=None, debug=True, show=True):
+    def __init__(self, opt, trainer, sim, train_loader=None, debug=False, show=True, pause_each_frame=False, output_ply=False):
         self.opt = opt  # shared with the trainer's opt to support in-place modification of rendering parameters.
         self.W = opt.W
         self.H = opt.H
@@ -472,6 +472,8 @@ class NeRFSimGUI:
         self.solver = sim ####
         self.frame = 0 ####
         self.paused = True
+        self.pause_each_frame = pause_each_frame
+        self.output_ply = output_ply
         # self.ctrl_pressed = False
         self.mouse_dragging = False
         self.depth = None
@@ -531,7 +533,8 @@ class NeRFSimGUI:
                                             gui_sim=True,
                                             solver=self.solver,
                                             frame=self.frame,
-                                            paused=self.paused
+                                            paused=self.paused,
+                                            output_ply=self.output_ply
                                             ) # NeRFSimGUI
 
             ender.record()
@@ -569,7 +572,8 @@ class NeRFSimGUI:
             dpg.set_value("_texture", self.render_buffer)
 
         if not self.paused:
-            self.paused = True ###################
+            if self.pause_each_frame:
+                self.paused = True ###################
             self.frame = self.frame + 1 ### added
 
     def screen_to_world(self, x, y):

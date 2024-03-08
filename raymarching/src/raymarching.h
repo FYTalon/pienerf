@@ -22,7 +22,9 @@ void march_rays_quadratic_bending(
     const int n_vtx, const int n_grid,
     const at::Tensor p_def, const at::Tensor p_ori,
     const at::Tensor F_IP, const at::Tensor dF_IP,
-    const at::Tensor bbmin, const float hgs, const int resolution,
+    const int max_iter_num,
+    const at::Tensor bbmin, const at::Tensor bbmax,
+    const float hgs, const int resolution,
     const float def_margin,
 
     const uint32_t n_alive, const uint32_t n_step, const at::Tensor rays_alive,

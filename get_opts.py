@@ -101,6 +101,8 @@ def get_shared_opts(parser):
 
     parser.add_argument('--sub_coeff', type=float, default=0.1)
     parser.add_argument('--sub_res', type=int, default=20)
+    parser.add_argument('--max_iter_num', type=int, default=100)
+
 
 
     opt = parser.parse_args()

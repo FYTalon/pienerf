@@ -5,6 +5,7 @@ __pycache__/
 *.egg-info/
 build/
 outputs/
+outputs_gui/
 *.ply
 point_cloud/
 debug/

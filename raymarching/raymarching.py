@@ -392,7 +392,9 @@ class _march_rays_quadratic_bending(Function):
                 n_vtx, n_grid,
                 p_def, p_ori,
                 F_IP, dF_IP,
-                bbmin, hgs, res,
+                max_iter_num,
+                bbmin, bbmax,
+                hgs, res,
                 def_margin,
 
                 n_alive, n_step, rays_alive, rays_t, rays_o, rays_d,
@@ -425,7 +427,9 @@ class _march_rays_quadratic_bending(Function):
             n_vtx, n_grid, #34
             p_def, p_ori, #56
             F_IP, dF_IP, # 78
-            bbmin, hgs, res, # 9,10,11
+            max_iter_num, # 9
+            bbmin, bbmax, # 10,11
+            hgs, res, # 12,13
             def_margin,
 
             n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, bound, dt_gamma, max_steps, C, H,

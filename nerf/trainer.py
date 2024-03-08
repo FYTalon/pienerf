@@ -26,7 +26,7 @@ class Trainer(object):
                  use_tensorboardX=True,  # whether to use tensorboard for logging
                  scheduler_update_every_step=False,  # whether to call scheduler.step() after every train step
                  ):
-
+        self.frame = 0
         self.name = name
         self.opt = opt
         self.mute = mute
@@ -281,7 +281,8 @@ class Trainer(object):
     # moved out bg_color and perturb for more flexible control...
     def test_step(self, data,
                   bg_color=None, perturb=False, render_def=False, gui_sim=False,
-                  solver=None, frame=None, paused=False # only used when gui_sim==True
+                  solver=None, frame=None, paused=False, # only used when gui_sim==True
+                  output_ply=False
                   ):
 
         rays_o = data['rays_o']  # [B, N, 3]
@@ -299,12 +300,20 @@ class Trainer(object):
 
             IP_pos, IP_F, IP_dF = solver.get_IP_info()
             self.model.p_def = IP_pos
-            self.model.IP_F = IP_F.view(-1, 9)
-            self.model.IP_dF = IP_dF.view(-1, 27)
+            self.model.IP_F = IP_F
+            self.model.IP_dF = IP_dF
 
+            bmin = IP_pos.min(axis=0).values.cpu().numpy()
+            bmax = IP_pos.max(axis=0).values.cpu().numpy()
+            print(f"frame={self.frame}, bbox:{bmin}~{bmax}")
+            if (np.abs(bmin) > 1e6).any():
+                exit()
             solver.stepforward()
             # print(time.time()-t)
 
+            self.frame += 1
+            if output_ply:
+                solver.OutputToPly(f"./outputs_gui/{frame}.ply")
 
         if render_def:
             outputs = self.model.render_deformed(rays_o, rays_d, staged=True, bg_color=bg_color, perturb=perturb, **vars(self.opt))
@@ -521,7 +530,7 @@ class Trainer(object):
     # [GUI] test on a single image
     def test_gui(self, pose, intrinsics, W, H, bg_color=None, spp=1, downscale=1,
                  render_def=False, gui_sim=False,
-                 solver=None, frame=None, paused=False
+                 solver=None, frame=None, paused=False, output_ply=False
                  ):
 
         # render resolution (may need downscale to for better frame rate)
@@ -558,7 +567,8 @@ class Trainer(object):
                                                         gui_sim=gui_sim,
                                                         solver=solver,
                                                         frame=frame,
-                                                        paused=paused
+                                                        paused=paused,
+                                                        output_ply=output_ply
                                                         )
 
         if self.ema is not None:

@@ -7,7 +7,9 @@ wp.init()
 # wp.config.verify_cuda = True
 from simulator.solver import Simulator
 
+
 os.environ['KMP_DUPLICATE_LIB_OK'] = '1'
+
 
 def get_args(opt):
     args = []
@@ -47,11 +49,11 @@ if __name__ == '__main__':
                       device=device, workspace=opt.workspace, use_checkpoint=opt.ckpt)
 
     sim = Simulator(
-        dt=1e-3,
+        dt=1e-2,
         iters=10,
-        bbox=torch.tensor([2*opt.bound, 2*opt.bound, 2*opt.bound]),
+        bbox=torch.tensor([5*opt.bound, 5*opt.bound, 5*opt.bound]),
         dx=0.05,
-        stiff=1e7,
+        stiff=1e3,
         base=torch.tensor([-opt.bound, -opt.bound, -opt.bound])
     )
 
@@ -60,15 +62,19 @@ if __name__ == '__main__':
     IP_pos, IP_F, IP_dF = sim.get_IP_info()
     model.p_ori = IP_pos
     model.p_def = IP_pos
-    model.IP_F = IP_F.view(-1, 9)
-    model.IP_dF = IP_dF.view(-1, 27)
+    model.IP_F = IP_F
+    model.IP_dF = IP_dF
+
+    output_ply = True
+    if output_ply:
+        if not os.path.exists("./outputs_gui/"):
+            os.mkdir("./outputs_gui/")
+        sim.OutputToPly(f"./outputs_gui/0.ply")
 
     with torch.no_grad():
-        gui = NeRFSimGUI(opt, trainer, sim)
+        gui = NeRFSimGUI(opt, trainer, sim, pause_each_frame=False, output_ply=True)
         # -> test_step -> test_gui -> test_step -> update_one_step
-
         gui.render()
-
 
 
 
