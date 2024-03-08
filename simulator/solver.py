@@ -177,7 +177,7 @@ class Simulator:
             dtype=torch.bool
         )
 
-        self.kdx = ((self.res.max() + 1) * self.dx) / (self.kres - 1)
+        self.kdx = ((self.res.max()) * self.dx) / (self.kres - 1)
 
         self.IP_kernel = torch.zeros(
             (self.IP_mask.sum(), 8),
@@ -494,10 +494,11 @@ class Simulator:
 
         lst = torch.tensor(lst, dtype=torch.int32)
         mat = global_matrix[lst][:, lst]
-        L, D, _ = scipy.linalg.ldl(mat.cpu().numpy(), lower=True, hermitian=False)
-        L = torch.from_numpy(np.linalg.inv(L)).cuda()
+        idx = torch.arange(0, mat.size(0), 1, dtype=torch.int32)
+        mat[idx, idx] += 1e-3
+        mat = mat.inverse()
         tmp = torch.zeros((dimension * 3, lst.size(0))).cuda()
-        tmp[lst] = L.permute(1, 0) @ torch.from_numpy(D).cuda().inverse() @ L
+        tmp[lst] = mat
         self.global_matrix[:, lst] = tmp
 
         wp_mat = wp.zeros(shape=(dimension, dimension), dtype=wpfloat)
@@ -581,10 +582,6 @@ class Simulator:
         dof_last = self.dof.clone()
         for it in range(self.iters):
             rhs = momentum + self.build_rhs() - self.rhs_rest
-            # x = torch.zeros_like(rhs)
-            # tmp = self.L @ (rhs[self.lst].view(-1, 1))
-            # tmp /= self.D
-            # x[self.lst] = (self.L.permute(1, 0) @ tmp).squeeze()
             x = self.global_matrix @ rhs
             self.dof = self.dof_rest + x
         self.dof_vel = (self.dof - dof_last) / self.dt * 0.998

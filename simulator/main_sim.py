@@ -22,14 +22,13 @@ def main():
     sim = Simulator(
         dt=1e-2,
         iters=10,
-        bbox=torch.tensor([5, 5, 5]),
+        bbox=torch.tensor([2, 2, 2]),
         dx=0.05,
         stiff=1e3,
         base=torch.tensor([-1, -1, -1])
     )
 
     sim.InitializeFromPly("../assets/chair.ply")
-    print(sim.IP_rho)
     sim.OutputToPly("../outputs/0.ply")
 
     if not os.path.exists("../debug"):
