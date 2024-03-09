@@ -240,6 +240,8 @@ class Simulator:
         self.kernel_grid = kernel_pos[self.kernel_mask, :]
 
         self.kernel_pos = self.kernel_grid * self.kdx + self.base
+        print(self.kernel_pos.dtype)
+        print(self.base.dtype)
 
         self.pts_Nx, self.pts_dNx, self.pts_ddNx = self.init_GMLS(self.pos, self.pts_kernel)
 
