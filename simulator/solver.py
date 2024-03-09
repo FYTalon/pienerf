@@ -417,7 +417,9 @@ class Simulator:
             ]
         )
 
-        return wp.to_torch(wp_pos), wp.to_torch(wp_F).permute(0,2,1).contiguous().view(-1, 9), wp.to_torch(wp_dF).permute(0,3,2,1).contiguous().view(-1, 27)
+        return wp.to_torch(wp_pos).to(dtype=torch.float32), \
+               wp.to_torch(wp_F).permute(0,2,1).contiguous().view(-1, 9).to(dtype=torch.float32), \
+               wp.to_torch(wp_dF).permute(0,3,2,1).contiguous().view(-1, 27).to(dtype=torch.float32)
 
 
     def collect_IP(self):
