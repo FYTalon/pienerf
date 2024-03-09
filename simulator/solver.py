@@ -106,8 +106,6 @@ class Simulator:
         el = PlyElement.describe(vertex, 'vertex')
         PlyData([el]).write(path)
 
-
-
     def InitializeFromPly(self, path):
         plydata = PlyData.read(path)
 

@@ -78,26 +78,13 @@ def get_shared_opts(parser):
     parser.add_argument('--render_interval', type=int, default=1)
     parser.add_argument('--render_offset', type=int, default=0)
     parser.add_argument('--dataset_type', type=str, default="")# --scale 0.8 --bound 1.0 --dt_gamma 0.0 --W 800 --H 800
-    # parser.add_argument('--def_margin', type=float, default=1.0)
-    parser.add_argument('--bary_margin', type=float, default=2.5)
     parser.add_argument('--query_cell_range', type=int, default=1)
-    # parser.add_argument('--hash_grid_size', type=float, default=0.01)
-    parser.add_argument('--hash_grid_res', type=int, default=16)
-    parser.add_argument('--cb_x1', type=float, default=0.0)
-    parser.add_argument('--cb_x2', type=float, default=0.0)
-    parser.add_argument('--cb_y1', type=float, default=0.0)
-    parser.add_argument('--cb_y2', type=float, default=0.0)
-    parser.add_argument('--cb_z1', type=float, default=0.0)
-    parser.add_argument('--cb_z2', type=float, default=0.0)
-
-    # all params being passed to CageSimulator must be str
-    parser.add_argument('--sub_size', type=str, default="33")
-    parser.add_argument('--frame_num', type=str, default="200")
-    parser.add_argument('--step_iter_num', type=str, default="1")
-    parser.add_argument('--jacobi_iter_num', type=str, default="0")
-    parser.add_argument('--force_stop_step', type=str, default="20")
+    # parser.add_argument('--hash_grid_res', type=int, default=16)
+    parser.add_argument('--hash_grid_size', type=float, default=0.05)
+    parser.add_argument('--num_seek_IP', type=int, default=1)
 
     parser.add_argument('--timing_on', action='store_true')
+    parser.add_argument('--output_ply', action='store_true')
 
     parser.add_argument('--sub_coeff', type=float, default=0.1)
     parser.add_argument('--sub_res', type=int, default=20)
