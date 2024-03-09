@@ -17,9 +17,9 @@ class Simulator:
             bbox=torch.tensor([2.0, 2.0, 2.0], dtype=torchfloat),
             kres=7,
             dx=1,
-            gravity=torch.tensor([0.0, -9.8, 0.0]),
+            gravity=torch.tensor([0.0, -9.8, 0.0], dtype=torchfloat),
             stiff=1e5,
-            base=torch.tensor([-0.5, -0.5, -0.5])
+            base=torch.tensor([-0.5, -0.5, -0.5], dtype=torchfloat)
     ):
         self.dt = dt
         self.iters = iters
@@ -250,7 +250,8 @@ class Simulator:
         self.build_global()
 
         self.dof = torch.zeros(
-            (self.kernel_mask.sum() * 30)
+            (self.kernel_mask.sum() * 30),
+            dtype = torchfloat
         )
 
         k_idx = torch.arange(0, self.kernel_mask.sum(), 1, dtype=torch.int32)
@@ -261,10 +262,12 @@ class Simulator:
         self.dof_rest = self.dof.clone()
 
         self.dof_vel = torch.zeros(
-            (self.kernel_mask.sum() * 30)
+            (self.kernel_mask.sum() * 30),
+            dtype = torchfloat
         )
         self.dof_f = torch.zeros(
-            (self.kernel_mask.sum() * 30)
+            (self.kernel_mask.sum() * 30),
+            dtype = torchfloat
         )
 
         self.kernel_cnt = torch.zeros(
@@ -441,7 +444,7 @@ class Simulator:
 
     def build_global(self):
         dimension = self.kernel_mask.sum() * 10
-        mat = torch.zeros((dimension, dimension))
+        mat = torch.zeros((dimension, dimension), dtype=torchfloat)
         wp_mat = wp.from_torch(mat)
 
         wp.launch(
@@ -477,7 +480,7 @@ class Simulator:
         )
 
         mat = wp.to_torch(wp_mat)
-        global_matrix = torch.zeros((dimension * 3, dimension * 3))
+        global_matrix = torch.zeros((dimension * 3, dimension * 3), dtype=torchfloat)
         global_matrix[0::3, 0::3] = mat
         global_matrix[1::3, 1::3] = mat
         global_matrix[2::3, 2::3] = mat
@@ -495,7 +498,7 @@ class Simulator:
         idx = torch.arange(0, mat.size(0), 1, dtype=torch.int32)
         mat[idx, idx] += 1e-3
         mat = mat.inverse()
-        tmp = torch.zeros((dimension * 3, lst.size(0))).cuda()
+        tmp = torch.zeros((dimension * 3, lst.size(0)), dtype=torchfloat).cuda()
         tmp[lst] = mat
         self.global_matrix[:, lst] = tmp
 
@@ -518,7 +521,7 @@ class Simulator:
             ]
         )
 
-        self.mass_matrix_invt2 = torch.zeros((dimension * 3, dimension * 3))
+        self.mass_matrix_invt2 = torch.zeros((dimension * 3, dimension * 3), dtype=torchfloat)
 
         mat = wp.to_torch(wp_mat)
 
@@ -565,7 +568,7 @@ class Simulator:
         return self.mass_matrix_invt2 @ self.dof_tilde + self.dof_f + self.rhs_gravity
 
     def update_force(self, vid, f):
-        self.dof_f = torch.zeros(self.dof.size(0) // 3, 3)
+        self.dof_f = torch.zeros((self.dof.size(0) // 3, 3), dtype=torchfloat)
         m = self.mass[vid]
         for i in range(8):
             kid = self.pts_kernel[vid, i]
@@ -585,7 +588,7 @@ class Simulator:
         self.dof_vel = (self.dof - dof_last) / self.dt * 0.998
 
     def update_pos(self):
-        self.pos = torch.zeros_like(self.pos)
+        self.pos = torch.zeros_like(self.pos, dtype=torchfloat)
         wp_pos = wp.zeros(shape=self.pos.size(0), dtype=vec3)
         wp.launch(
             kernel=cuda_utils.update_pos_kernel,

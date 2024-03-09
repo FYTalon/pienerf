@@ -22,10 +22,10 @@ def main():
     sim = Simulator(
         dt=1e-2,
         iters=10,
-        bbox=torch.tensor([2, 2, 2]),
+        bbox=torch.tensor([2, 2, 2], dtype=torchfloat),
         dx=0.05,
         stiff=1e3,
-        base=torch.tensor([-1, -1, -1])
+        base=torch.tensor([-1, -1, -1], dtype=torchfloat)
     )
 
     sim.InitializeFromPly("../assets/chair.ply")
