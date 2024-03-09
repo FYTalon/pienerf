@@ -23,13 +23,13 @@ class Simulator:
     ):
         self.dt = dt
         self.iters = iters
-        self.res = (bbox // dx).to(dtype=torch.int32)
+        self.res = (bbox // dx).to(dtype=torch.int32).cuda()
         self.dx = dx
-        self.base = base
+        self.base = base.cuda()
 
         self.kres = kres
 
-        self.gravity = gravity
+        self.gravity = gravity.cuda()
         self.stiff = stiff
 
         # point
