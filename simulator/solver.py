@@ -21,6 +21,10 @@ class Simulator:
             stiff=1e5,
             base=torch.tensor([-0.5, -0.5, -0.5], dtype=torchfloat)
     ):
+        bbox = bbox.to(dtype=torchfloat).cuda()
+        gravity = gravity.to(dtype=torchfloat).cuda()
+        base = base.to(dtype=torchfloat).cuda()
+
         self.dt = dt
         self.iters = iters
         self.res = (bbox // dx).to(dtype=torch.int32).cuda()
@@ -240,8 +244,6 @@ class Simulator:
         self.kernel_grid = kernel_pos[self.kernel_mask, :]
 
         self.kernel_pos = self.kernel_grid * self.kdx + self.base
-        print(self.kernel_pos.dtype)
-        print(self.base.dtype)
 
         self.pts_Nx, self.pts_dNx, self.pts_ddNx = self.init_GMLS(self.pos, self.pts_kernel)
 
@@ -570,6 +572,7 @@ class Simulator:
         return self.mass_matrix_invt2 @ self.dof_tilde + self.dof_f + self.rhs_gravity
 
     def update_force(self, vid, f):
+        f = f.to(dtype=torchfloat).cuda()
         self.dof_f = torch.zeros((self.dof.size(0) // 3, 3), dtype=torchfloat)
         m = self.mass[vid]
         for i in range(8):
