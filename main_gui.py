@@ -53,11 +53,11 @@ if __name__ == '__main__':
                       device=device, workspace=opt.workspace, use_checkpoint=opt.ckpt)
 
     sim = Simulator(
-        dt=1e-2,
-        iters=10,
+        dt=opt.sim_dt,
+        iters=opt.sim_iters,
         bbox=torch.tensor([2*opt.bound, 2*opt.bound, 2*opt.bound]),
-        dx=0.05,
-        stiff=1e5,
+        dx=opt.sim_dx,
+        stiff=opt.sim_stiff,
         base=torch.tensor([-opt.bound, -opt.bound, -opt.bound])
     )
 
@@ -69,7 +69,7 @@ if __name__ == '__main__':
     model.p_def = IP_pos
     model.IP_F = IP_F
     model.IP_dF = IP_dF
-    model.IP_dx = sim.dx * 4
+    model.IP_dx = sim.dx * 1.05
 
     output_ply = opt.output_ply
     if output_ply:

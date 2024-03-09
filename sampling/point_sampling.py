@@ -5,9 +5,12 @@ from nerf.utils import *
 from plyfile import PlyData, PlyElement
 import numpy as np
 import warp as wp
+from nerf.utils import get_pnts_in_grids
 
-def write_ply(filename, points):
-    vertex = np.array([tuple(v) for v in points], dtype=[('x', 'f8'), ('y', 'f8'), ('z', 'f8')])  # float64
+def write_ply(filename, points, volumes):
+    # vertex = np.array([tuple(v) for v in points], dtype=[('x', 'f8'), ('y', 'f8'), ('z', 'f8')])  # f8: float64
+    vertex = np.array([tuple(v) + (vp,) for v, vp in zip(points, volumes)],
+                      dtype=[('x', 'f8'), ('y', 'f8'), ('z', 'f8'), ('vp', 'f8')])
     el = PlyElement.describe(vertex, 'vertex')
     PlyData([el]).write(filename)
 
@@ -137,7 +140,7 @@ def get_sub_grid(
         sub_maxs[gid] = g2p(g7, grid_size, bound)
         sub_dims[gid] = wp.int32((sub_maxs[gid] - sub_mins[gid])[0] * sub_coeff * res * grad_norm)
 
-class UniformSampling:
+class AdaptiveUniformSampling:
     def __init__(
             self,
             opt,
@@ -147,7 +150,7 @@ class UniformSampling:
         self.dtype = torch.float32
         self.opt = opt
         self.bound = opt.bound
-        self.threshold = opt.threshold
+        self.threshold = opt.density_threshold
         self.res = opt.sub_res
         self.model = model.to(self.device)
         self.grid_size = 2 * self.bound / self.res
@@ -171,6 +174,27 @@ class UniformSampling:
 
     def hash_code_g(self, g):
         return int(g[2] * self.res * self.res + g[1] * self.res + g[0])
+
+    def get_point_volumes(self, pts):
+        pts = pts.cuda()
+        vols = torch.zeros(pts.shape[0], dtype=torch.float32).cuda()
+        n_vtx = pts.shape[0]
+        bmin = pts.min(axis=0).values
+        bmax = pts.max(axis=0).values
+        marg = 1e-3
+        bbmin = bmin - marg * torch.ones(3, dtype=torch.float32).cuda()
+        bbmax = bmax + marg * torch.ones(3, dtype=torch.float32).cuda()
+        hgs = self.opt.hash_grid_size
+        resolution = torch.ceil((bbmax - bbmin) / hgs).to(torch.int32)
+        n_grid = resolution[2] * resolution[1] * resolution[0]
+        pig_cnt, pig_bgn, pig_idx = get_pnts_in_grids(n_vtx, n_grid, pts, bbmin, bbmax, hgs, resolution)
+
+        vol = hgs ** 3 / pig_cnt.float()
+        for gid in range(n_grid):
+            bgn = pig_bgn[gid]
+            pid = pig_idx[bgn : bgn + pig_cnt[gid]]
+            vols[pid] = vol[gid]
+        return vols
 
     def sample(self):
         n_grid = self.res ** 3
@@ -229,7 +253,6 @@ class UniformSampling:
                       wp.from_torch(sub_mins, dtype=wp.vec3f),
                       wp.from_torch(sub_maxs, dtype=wp.vec3f),
                       wp.from_torch(sub_dims),
-                      # wp.from_torch(sub_cnt),
                       wp.from_torch(sub_bgn),
                       wp.from_torch(pnts_add, dtype=wp.vec3f),
                   ],
@@ -247,12 +270,12 @@ class UniformSampling:
         pts = torch.cat((pts, grid_pts + 0.5 * 2 * self.opt.bound / float(self.res)), dim=0)
         density = self.get_density(pts)
         pts = pts[density > self.threshold]
-        write_ply(write_path + ".ply", pts)
+
+        vols = self.get_point_volumes(pts)
+
+        write_ply(write_path + ".ply", pts.cpu().numpy(), vols.cpu().numpy())
         print("writing to ", os.path.abspath(write_path + ".ply"))
 
-        # pts = torch.cat((pnts_add, grid_pts), dim=0)
-        # write_ply(write_path + "_2.ply", pts)
-        #
         # density = self.get_density(pnts_add)
         # pnts_add = pnts_add[density > self.threshold]
         # write_ply(write_path + "_add.ply", pnts_add)
@@ -300,9 +323,9 @@ if __name__ == "__main__":
     )
     trainer = Trainer('ngp', opt, model, workspace=opt.workspace, use_checkpoint=opt.ckpt, eval_interval=50)
 
-    UniformSampling(opt, model).sample()
+    AdaptiveUniformSampling(opt, model).sample()
 
-    # --dataset_type synthetic --workspace ../model/chair --exp_name chair_s --sub_coeff 0.15 --sub_res 25
+    # --dataset_type synthetic --workspace ../model/chair --exp_name chair_s  --sub_coeff 0.25 --sub_res 40
     # --dataset_type synthetic --workspace ../model/chair --exp_name chair --sub_coeff 0.55 --sub_res 60
 
 

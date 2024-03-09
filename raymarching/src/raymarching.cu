@@ -1258,7 +1258,6 @@ __global__ void kernel_march_rays_quadratic_bending(
 
                     if (dq[0]*dq[0] + dq[1]*dq[1] + dq[2]*dq[2] < 1e-12)
                     {
-//                         printf("converged! itr=%i\n", num_itr);
                         break;
                     }
 
@@ -1271,10 +1270,6 @@ __global__ void kernel_march_rays_quadratic_bending(
                 {
                     n_IP--;
                 }
-
-//                 x_map += ip_weight[k] * p[0];
-//                 y_map += ip_weight[k] * p[1];
-//                 z_map += ip_weight[k] * p[2];
                 ps[3 * k] = p[0];
                 ps[3 * k + 1] = p[1];
                 ps[3 * k + 2] = p[2];
@@ -1328,20 +1323,11 @@ __global__ void kernel_march_rays_quadratic_bending(
                 z_map = w0 * ps[2] + w1 * ps[5] + w2 * ps[8];
             }
 
-            if(itr_sum > 100)
-                printf("(%f,%f,%f): n_IP=%i, itr_sum=%i\n", x, y, z, n_IP, itr_sum);
-
-//             printf("n_IP=%i\n", n_IP);
-
             x = x_map;
             y = y_map;
             z = z_map;
 
-//             assert(!(x==0.0&&y==0.0&&z==0.0));
-
         }//end if(found)
-
-
 
         //end raybending--------------------------------------------------------------------------------
 

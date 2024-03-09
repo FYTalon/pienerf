@@ -64,32 +64,31 @@ def get_shared_opts(parser):
     parser.add_argument('--rand_pose', type=int, default=-1,
                         help="<0 uses no rand pose, =0 only uses rand pose, >0 sample one rand pose every $ known poses")
 
-
     # model parameters
     parser.add_argument('--exp_name', type=str, default='exp', help='experiment name')
     parser.add_argument('--ckpt_path', type=str, default=None, help='pretrained checkpoint to load (including optimizers, etc)')
     parser.add_argument('--vres', type=int, default=96)
     parser.add_argument('--con', type=int, default=1) # num of connected components to keep
-    parser.add_argument('--threshold', type=float, default=0.05) # density[<threshold] = 0.0
-    parser.add_argument('--cut_bound', type=float, default=1.0) # cut scene with this ratio
 
-    parser.add_argument('--skip_rendered', action='store_true')
-    parser.add_argument('--render_frames', type=int, default=10)
-    parser.add_argument('--render_interval', type=int, default=1)
-    parser.add_argument('--render_offset', type=int, default=0)
     parser.add_argument('--dataset_type', type=str, default="")# --scale 0.8 --bound 1.0 --dt_gamma 0.0 --W 800 --H 800
-    parser.add_argument('--query_cell_range', type=int, default=1)
-    # parser.add_argument('--hash_grid_res', type=int, default=16)
+
+    # sampling settings
+    parser.add_argument('--density_threshold', type=float, default=0.05)
+    parser.add_argument('--sub_coeff', type=float, default=0.1, help="bigger, more boundary points")
+    parser.add_argument('--sub_res', type=int, default=20, help="bigger, more grid points")
+
+    # rendering settings
     parser.add_argument('--hash_grid_size', type=float, default=0.05)
     parser.add_argument('--num_seek_IP', type=int, default=1)
-
     parser.add_argument('--timing_on', action='store_true')
     parser.add_argument('--output_ply', action='store_true')
+    parser.add_argument('--max_iter_num', type=int, default=100, help="maximum number of Newton iterations in quadratic bending")
 
-    parser.add_argument('--sub_coeff', type=float, default=0.1)
-    parser.add_argument('--sub_res', type=int, default=20)
-    parser.add_argument('--max_iter_num', type=int, default=100)
-
+    # simulator settings
+    parser.add_argument('--sim_dt', type=float, default=1e-2)
+    parser.add_argument('--sim_dx', type=float, default=0.05)
+    parser.add_argument('--sim_iters', type=int, default=10)
+    parser.add_argument('--sim_stiff', type=float, default=1e5)
 
 
     opt = parser.parse_args()
