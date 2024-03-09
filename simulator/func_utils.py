@@ -2,7 +2,7 @@ import warp as wp
 import torch
 import numpy as np
 
-torch.set_default_dtype(torch.float64)
+# torch.set_default_dtype(torch.float64)
 torch.set_default_device("cuda")
 wp.set_device("cuda:0")
 

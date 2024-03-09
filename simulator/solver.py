@@ -6,7 +6,7 @@ from plyfile import PlyData, PlyElement
 from kornia.utils.grid import create_meshgrid3d
 from simulator import cuda_utils
 from simulator import cpu_utils
-from simulator.cuda_utils import npfloat, wpfloat, vec3, vec10, mat10, mat3
+from simulator.cuda_utils import torchfloat, npfloat, wpfloat, vec3, vec10, mat10, mat3
 
 
 class Simulator:
@@ -14,7 +14,7 @@ class Simulator:
             self,
             dt=1e-2,
             iters=20,
-            bbox=torch.tensor([2.0, 2.0, 2.0], dtype=torch.float64),
+            bbox=torch.tensor([2.0, 2.0, 2.0], dtype=torchfloat),
             kres=7,
             dx=1,
             gravity=torch.tensor([0.0, -9.8, 0.0]),

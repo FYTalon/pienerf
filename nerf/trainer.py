@@ -294,7 +294,7 @@ class Trainer(object):
 
         # print("trainer: ", self.opt.num_steps)
 
-
+        # torch.set_default_dtype(torch.float64)
         if gui_sim and not paused:
             # t = time.time()
 
@@ -310,6 +310,7 @@ class Trainer(object):
             if output_ply:
                 solver.OutputToPly(f"./outputs_gui/{frame}.ply")
 
+        # torch.set_default_dtype(torch.float32)
         if render_def:
             # t = time.time()
             outputs = self.model.render_deformed(rays_o, rays_d, staged=True, bg_color=bg_color, perturb=perturb, **vars(self.opt))

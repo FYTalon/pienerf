@@ -300,7 +300,6 @@ class NeRFRenderer(nn.Module):
             #plot_pointcloud(xyzs.reshape(-1, 3).detach().cpu().numpy())
             
             sigmas, rgbs = self(xyzs, dirs)
-            sigmas, rgbs = sigmas.to(torch.float32), rgbs.to(torch.float32)
             sigmas = self.density_scale * sigmas
 
             #print(f'valid RGB query ratio: {mask.sum().item() / mask.shape[0]} (total = {mask.sum().item()})')
@@ -368,7 +367,6 @@ class NeRFRenderer(nn.Module):
                     dt_gamma, max_steps)
 
                 sigmas, rgbs = self(xyzs, dirs)
-                sigmas, rgbs = sigmas.to(torch.float32), rgbs.to(torch.float32)
                 sigmas = self.density_scale * sigmas
 
                 raymarching.composite_rays(n_alive, n_step, rays_alive, rays_t, sigmas, rgbs, deltas, weights_sum, depth, image, T_thresh)
@@ -756,6 +754,7 @@ class NeRFRenderer(nn.Module):
 
     def rund_cuda(self, rays_o, rays_d, dt_gamma=0, bg_color=None, perturb=False, max_steps=1024,
                  T_thresh=1e-2, **kwargs):
+        dtype = torch.float32
 
         timing_on = kwargs.get('timing_on')
         logtime = time.time()
@@ -771,16 +770,16 @@ class NeRFRenderer(nn.Module):
         # res = kwargs.get('hash_grid_res') # int, ==16
         hgs = kwargs.get('hash_grid_size') # float, ==0.05
 
-        p_def = self.p_def.to(torch.float32).contiguous()
-        p_ori = self.p_ori.to(torch.float32).contiguous()
-        F_IP = self.IP_F.to(torch.float32).contiguous()
-        dF_IP = self.IP_dF.to(torch.float32).contiguous()
+        p_def = self.p_def.contiguous()
+        p_ori = self.p_ori.contiguous()
+        F_IP = self.IP_F.contiguous()
+        dF_IP = self.IP_dF.contiguous()
 
         bmin = p_def.min(axis=0).values
         bmax = p_def.max(axis=0).values
         marg = 1e-3
-        bbmin = bmin - marg * torch.ones(3, dtype=torch.float32)
-        bbmax = bmax + marg * torch.ones(3, dtype=torch.float32)
+        bbmin = bmin - marg * torch.ones(3, dtype=dtype)
+        bbmax = bmax + marg * torch.ones(3, dtype=dtype)
         # hgs = (bbmax - bbmin) / float(res) # wrong, sh grid should be cube, not cuboid
         resolution = torch.ceil((bbmax - bbmin) / hgs).to(torch.int32)
 
@@ -795,8 +794,6 @@ class NeRFRenderer(nn.Module):
             bg_color = 1
 
         results = {}
-
-        dtype = torch.float32
 
         weights_sum = torch.zeros(N, dtype=dtype, device=device)
         depth = torch.zeros(N, dtype=dtype, device=device)
@@ -815,7 +812,7 @@ class NeRFRenderer(nn.Module):
         # print(f"bbox:{bbmin.cpu().numpy()}~{bbmax.cpu().numpy()}")
 
         if timing_on:
-            print("timing: prepare : ", time.time() - logtime) # 0.002
+            print("timing: prepare: ", time.time() - logtime) # 0.002
             logtime = time.time()
 
         n_alive = N
@@ -823,6 +820,9 @@ class NeRFRenderer(nn.Module):
         rays_t = nears.clone()  # [N]
 
         step = 0
+
+        if timing_on:
+            T1, T2 = 0, 0
 
         while step < max_steps:
 
@@ -835,6 +835,9 @@ class NeRFRenderer(nn.Module):
 
             # decide compact_steps
             n_step = max(min(N // n_alive, 8), 1)
+
+            if timing_on:
+                t1 = time.time()
 
             xyzs, dirs, deltas = raymarching.march_rays_quadratic_bending(
                 pig_cnt, pig_bgn, pig_idx,
@@ -856,14 +859,23 @@ class NeRFRenderer(nn.Module):
             #                                             fars, 128, perturb if step == 0 else False, dt_gamma, max_steps)
             # 80-90 ms
 
+            if timing_on:
+                t1 = t1 - time.time()
+                T1 += t1
+
             sigmas, rgbs = self(xyzs, dirs)
-            sigmas, rgbs = sigmas.to(torch.float32), rgbs.to(torch.float32)
+            # sigmas, rgbs = sigmas.to(torch.float32), rgbs.to(torch.float32)
             sigmas = self.density_scale * sigmas
 
+            t2 = time.time()
             raymarching.composite_rays(
                 n_alive, n_step, rays_alive, rays_t,
                 sigmas, rgbs, deltas, weights_sum,
                 depth, image, T_thresh)
+
+            if timing_on:
+                t2 = t2 - time.time()
+                T2 += t2
 
             rays_alive = rays_alive[rays_alive >= 0]
 
@@ -872,7 +884,7 @@ class NeRFRenderer(nn.Module):
             step += n_step
 
         if timing_on:
-            print("timing: bending : ", time.time() - logtime)  # 0.002
+            print(f"timing: bending: {time.time() - logtime}, march_rays: {T1}, composite_rays: {T2}")
             logtime = time.time()
 
         depth_0 = depth

@@ -28,16 +28,7 @@ if __name__ == '__main__':
         opt.num_seek_IP = 1
     opt.current_folder = os.path.dirname(os.path.abspath(__file__))
 
-    if opt.ff:
-        opt.fp16 = True
-        assert opt.bg_radius <= 0, "background model is not implemented for --ff"
-        from nerf.network_ff import NeRFNetwork
-    elif opt.tcnn:
-        opt.fp16 = True
-        assert opt.bg_radius <= 0, "background model is not implemented for --tcnn"
-        from nerf.network_tcnn import NeRFNetwork
-    else:
-        from nerf.network import NeRFNetwork
+    from nerf.network import NeRFNetwork
 
     model = NeRFNetwork( # NeRFNetwork inherits NeRFRenderer
         encoding="hashgrid",
