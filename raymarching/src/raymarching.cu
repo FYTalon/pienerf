@@ -1044,48 +1044,79 @@ __device__ int find_closest_IP(
     return ip;
 }
 
-__device__ int find_three_IPs(
+__device__ int find_closest_IPs(
+    const float x, const float y, const float z,
+    const float* __restrict__ p_def,
     const int n_grid,
     const int g0, const int g1, const int g2, const int* __restrict__ resolution,
     const int* __restrict__ pig_cnt, const int* __restrict__ pig_bgn, const int* __restrict__ pig_idx,
-    int* IPs, int num_IP)
-{
-    int gid = g2 * resolution[1] * resolution[0] + g1 * resolution[0] + g0;
-    int count = 0;
-    while(count < num_IP && count < pig_cnt[gid])
-    {
-        IPs[count] = pig_idx[pig_bgn[gid] + count];
-        count++;
+    int* closest_ips, const int num_seek_IP
+) {
+    float closest_dists[10];
+    for (int i = 0; i < num_seek_IP; i++) {
+        closest_dists[i] = FLT_MAX;
+        closest_ips[i] = -1;
     }
-    if(count == num_IP)  return count;
 
-    int fghs[26*3] = {
-        -1,0,0, 0,-1,0, 0,0,-1,
-        1,0,0, 0,1,0, 0,0,1,
-        -1,-1,0, -1,0,-1, 0,-1,-1,
-        1,1,0, 1,0,1, 0,1,1,
-        -1,1,0, -1,0,1, 0,-1,1,
-        1,-1,0, 1,0,-1, 0,1,-1,
-        -1,-1,1, -1,1,-1, 1,-1,-1,
-        1,1,-1, 1,-1,1, -1,1,1,
-        -1,-1,-1, 1,1,1
+    auto check_and_insert_closest_points = [&](int gid) {
+        if (gid < 0 || gid >= n_grid) return;
+
+        for (int i = 0; i < pig_cnt[gid]; i++) {
+            int ip_tmp = pig_idx[pig_bgn[gid] + i];
+            const float* pk_ = &p_def[ip_tmp * 3];
+            float dist2_tmp = (pk_[0]-x)*(pk_[0]-x) + (pk_[1]-y)*(pk_[1]-y) + (pk_[2]-z)*(pk_[2]-z);
+
+            for (int j = 0; j < num_seek_IP; j++) {
+                if (dist2_tmp < closest_dists[j]) {
+                    for (int k = num_seek_IP - 1; k > j; k--) {
+                        closest_dists[k] = closest_dists[k-1];
+                        closest_ips[k] = closest_ips[k-1];
+                    }
+                    closest_dists[j] = dist2_tmp;
+                    closest_ips[j] = ip_tmp;
+                    break;
+                }
+            }
+        }
     };
-    for (int k=0; k<26; k++)
-    {
-        int f = fghs[3 * k];
-        int g = fghs[3 * k + 1];
-        int h = fghs[3 * k + 2];
-        if(g2 + f >= resolution[2] || g2 + f < 0 || g1 + g >= resolution[1] || g1 + g < 0 || g0 + h >= resolution[0] || g0 + h < 0)  continue;
-        gid = (g2 + f) * resolution[1] * resolution[0] + (g1 + g) * resolution[0] + g0 + h;
-        for(int i=0; i<pig_cnt[gid]; i++)
-        {
-            IPs[count] = pig_idx[pig_bgn[gid] + i];
-            count++;
-            if(count==num_IP) return count;
+
+    int gid = g2 * resolution[1] * resolution[0] + g1 * resolution[0] + g0;
+    check_and_insert_closest_points(gid);
+
+    int found_count = 0;
+
+    if (found_count < num_seek_IP) {
+        int dirs[26*3] = {
+            -1,0,0, 0,-1,0, 0,0,-1,
+            1,0,0, 0,1,0, 0,0,1,
+            -1,-1,0, -1,0,-1, 0,-1,-1,
+            1,1,0, 1,0,1, 0,1,1,
+            -1,1,0, -1,0,1, 0,-1,1,
+            1,-1,0, 1,0,-1, 0,1,-1,
+            -1,-1,1, -1,1,-1, 1,-1,-1,
+            1,1,-1, 1,-1,1, -1,1,1,
+            -1,-1,-1, 1,1,1
+        };
+
+        for (int i = 0; i < 26; i++) {
+            int dx = dirs[3 * i], dy = dirs[3 * i + 1], dz = dirs[3 * i + 2];
+            int ng0 = g0 + dx, ng1 = g1 + dy, ng2 = g2 + dz;
+
+            if (ng0 >= 0 && ng0 < resolution[0] && ng1 >= 0 && ng1 < resolution[1] && ng2 >= 0 && ng2 < resolution[2]) {
+                gid = ng2 * resolution[1] * resolution[0] + ng1 * resolution[0] + ng0;
+                check_and_insert_closest_points(gid);
+            }
         }
     }
-    return count;
+
+    found_count = 0;
+    for (int i = 0; i < num_seek_IP; i++) {
+        if (closest_ips[i] != -1) found_count++;
+    }
+
+    return found_count;
 }
+
 
 template <typename scalar_t>
 __global__ void kernel_march_rays_quadratic_bending(
@@ -1174,7 +1205,7 @@ __global__ void kernel_march_rays_quadratic_bending(
             printf("ERROR: g0=%i, g1=%i, g2=%i, xyz:(%f,%f,%f), bbmin:(%f,%f,%f)\n", g0, g1, g2, x, y, z, bbmin[0], bbmin[1], bbmin[2]);
         int gid = g2 * resolution[1] * resolution[0] + g1 * resolution[0] + g0;
 
-        int IPs[3] = {-1,-1,-1};
+        int IPs[10] = {-1,-1,-1,-1,-1,-1,-1,-1,-1,-1};
         int n_IP = 0;
         if (num_seek_IP == 1)
         {
@@ -1188,7 +1219,7 @@ __global__ void kernel_march_rays_quadratic_bending(
             }
         }
         else
-            n_IP = find_three_IPs(n_grid, g0, g1, g2, resolution, pig_cnt, pig_bgn, pig_idx, IPs, num_seek_IP);
+            n_IP = find_closest_IPs(x, y, z, p_def, n_grid, g0, g1, g2, resolution, pig_cnt, pig_bgn, pig_idx, IPs, num_seek_IP);
         if(n_IP <= 0)
             found = false;
         else

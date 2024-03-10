@@ -94,6 +94,9 @@ class NeRFSimGUI:
 
         self.render_IP = False
 
+        self.fps_values = []
+        self.max_frames_to_capture = 30
+
         if self.show:
             dpg.create_context()
             self.register_dpg()
@@ -121,12 +124,25 @@ class NeRFSimGUI:
                 self.render_buffer[screen_x][screen_y] = np.array([0, 0, 1])
         return self.render_buffer
 
-    def test_step(self):
+    def update_fps_plot(self):
+        if dpg.does_item_exist("line_series_fps_log"):
+            x_values = list(range(len(self.fps_values)))
+            y_values = self.fps_values
+            if len(self.fps_values) > 30:
+                x_values = x_values[-30:]
+                y_values = y_values[-30:]
+            dpg.set_value("line_series_fps_log", [x_values, y_values])
+            min_value, max_value = min(y_values), max(y_values)
+            ticks = list(range(int(min_value), int(max_value) + 1, 1))
+            dpg.set_axis_ticks("_fps_y_axis", tuple((str(tick), tick) for tick in ticks))
+            dpg.set_axis_limits("_fps_x_axis", min(x_values), 30 if max(x_values) < 30 else max(x_values))
+            dpg.set_axis_limits("_fps_y_axis", min_value, max_value)
 
+    def test_step(self):
         self.pts, _, _ = self.solver.get_IP_info()
         self.pts = self.pts.cpu().numpy()
 
-        if self.sid:
+        if self.sid is not None:
             x1, y1 = dpg.get_mouse_pos()
             dpg.delete_item("c0")
             dpg.delete_item("c1")
@@ -138,11 +154,12 @@ class NeRFSimGUI:
             p1, _ = self.screen_to_world(x1, y1)
             p0 = self.pts[self.sid]
             mouse_force_3d = 5e5 * (p1 - p0)
-            self.solver.update_force(self.sid, torch.tensor([mouse_force_3d[0],mouse_force_3d[1],mouse_force_3d[2]]))
+            self.solver.update_force(self.sid, torch.tensor([mouse_force_3d[0], mouse_force_3d[1], mouse_force_3d[2]]))
 
         if not self.paused:
             self.need_update = True #### added
 
+        t = 0
         if self.need_update or self.spp < self.opt.max_spp:
 
             starter, ender = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
@@ -197,7 +214,9 @@ class NeRFSimGUI:
         if not self.paused:
             if self.pause_each_frame:
                 self.paused = True
+            self.fps_values.append(int(1000 / t))
             self.frame = self.frame + 1
+            self.update_fps_plot()
 
     def screen_to_world(self, x, y):
         fx, fy, cx, cy = self.cam.intrinsics
@@ -265,6 +284,15 @@ class NeRFSimGUI:
                 dpg.add_text("SPP: ")
                 dpg.add_text("1", tag="_log_spp")
 
+            with dpg.plot(label="FPS Over Time", height=160, width=-1, no_title=True, no_mouse_pos=True):
+                dpg.add_plot_axis(dpg.mvXAxis, label="Frame", tag="_fps_x_axis")
+                dpg.add_plot_axis(dpg.mvYAxis, label="FPS", tag="_fps_y_axis")
+                dpg.add_line_series(list(range(len(self.fps_values))), self.fps_values, parent="_fps_y_axis", tag="line_series_fps_log")
+                # dpg.set_axis_limits_auto("_fps_x_axis")
+                # dpg.set_axis_limits_auto("_fps_y_axis")
+                dpg.set_axis_limits("_fps_x_axis", 0, 30)
+                dpg.set_axis_limits("_fps_y_axis", 10, 20)
+
             # rendering options
             with dpg.collapsing_header(label="Options", default_open=True):
 
@@ -322,36 +350,6 @@ class NeRFSimGUI:
                 dpg.add_slider_int(label="max steps", min_value=1, max_value=1024, format="%d",
                                    default_value=self.opt.max_steps, callback=callback_set_max_steps)
 
-                # aabb slider
-                def callback_set_aabb(sender, app_data, user_data):
-                    # user_data is the dimension for aabb (xmin, ymin, zmin, xmax, ymax, zmax)
-                    self.trainer.model.aabb_infer[user_data] = app_data
-
-                    # also change train aabb ? [better not...]
-                    # self.trainer.model.aabb_train[user_data] = app_data
-
-                    self.need_update = True
-
-                dpg.add_separator()
-                dpg.add_text("Axis-aligned bounding box:")
-
-                with dpg.group(horizontal=True):
-                    dpg.add_slider_float(label="x", width=150, min_value=-self.opt.bound, max_value=0, format="%.2f",
-                                         default_value=-self.opt.bound, callback=callback_set_aabb, user_data=0)
-                    dpg.add_slider_float(label="", width=150, min_value=0, max_value=self.opt.bound, format="%.2f",
-                                         default_value=self.opt.bound, callback=callback_set_aabb, user_data=3)
-
-                with dpg.group(horizontal=True):
-                    dpg.add_slider_float(label="y", width=150, min_value=-self.opt.bound, max_value=0, format="%.2f",
-                                         default_value=-self.opt.bound, callback=callback_set_aabb, user_data=1)
-                    dpg.add_slider_float(label="", width=150, min_value=0, max_value=self.opt.bound, format="%.2f",
-                                         default_value=self.opt.bound, callback=callback_set_aabb, user_data=4)
-
-                with dpg.group(horizontal=True):
-                    dpg.add_slider_float(label="z", width=150, min_value=-self.opt.bound, max_value=0, format="%.2f",
-                                         default_value=-self.opt.bound, callback=callback_set_aabb, user_data=2)
-                    dpg.add_slider_float(label="", width=150, min_value=0, max_value=self.opt.bound, format="%.2f",
-                                         default_value=self.opt.bound, callback=callback_set_aabb, user_data=5)
 
             # debug info
             if self.debug:
