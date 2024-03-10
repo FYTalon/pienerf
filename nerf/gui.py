@@ -93,7 +93,7 @@ class NeRFSimGUI:
         self.pts = self.pts.cpu().numpy()
 
         self.render_IP = False
-
+        self.log_FPS = False
         self.fps_values = []
         self.max_frames_to_capture = 30
 
@@ -153,11 +153,15 @@ class NeRFSimGUI:
             dpg.draw_line((x0, y0), (x1, y1), color=[0, 0, 0, 100], thickness=5, parent="_primary_window", tag="l1")
             p1, _ = self.screen_to_world(x1, y1)
             p0 = self.pts[self.sid]
-            mouse_force_3d = 5e5 * (p1 - p0)
+            mouse_force_3d = 1e5 * (p1 - p0)
+            # print(f"force: {np.linalg.norm(mouse_force_3d)}")
+            force_norm = np.linalg.norm(mouse_force_3d)
+            if force_norm > 5e5:
+                mouse_force_3d *= 5e5 / force_norm
             self.solver.update_force(self.sid, torch.tensor([mouse_force_3d[0], mouse_force_3d[1], mouse_force_3d[2]]))
 
         if not self.paused:
-            self.need_update = True #### added
+            self.need_update = True
 
         t = 0
         if self.need_update or self.spp < self.opt.max_spp:
@@ -207,7 +211,7 @@ class NeRFSimGUI:
 
             dpg.set_value("_log_infer_time", f'{t:.4f}ms ({int(1000 / t)} FPS)')
             dpg.set_value("_log_resolution", f'{int(self.downscale * self.W)}x{int(self.downscale * self.H)}')
-            dpg.set_value("_log_spp", self.spp)
+            # dpg.set_value("_log_spp", self.spp)
             dpg.set_value("_log_frame", self.frame)
             dpg.set_value("_texture", self.render_buffer)
 
@@ -216,7 +220,8 @@ class NeRFSimGUI:
                 self.paused = True
             self.fps_values.append(int(1000 / t))
             self.frame = self.frame + 1
-            self.update_fps_plot()
+            if self.log_FPS:
+                self.update_fps_plot()
 
     def screen_to_world(self, x, y):
         fx, fy, cx, cy = self.cam.intrinsics
@@ -277,14 +282,15 @@ class NeRFSimGUI:
             def callback_render_IP(sender, app_data):
                 self.render_IP = not self.render_IP
                 self.need_update = True
-            dpg.add_checkbox(label="render IPs", default_value=self.dynamic_resolution,
-                             callback=callback_render_IP)
+            dpg.add_checkbox(label="render IPs", default_value=False, callback=callback_render_IP)
 
-            with dpg.group(horizontal=True):
-                dpg.add_text("SPP: ")
-                dpg.add_text("1", tag="_log_spp")
+            # FPS logging chart
+            def callback_log_FPS(sender, app_data):
+                self.log_FPS = not self.log_FPS
+                dpg.configure_item("fps_over_time_plot", show=self.log_FPS)
+            dpg.add_checkbox(label="log FPS", default_value=False, callback=callback_log_FPS)
 
-            with dpg.plot(label="FPS Over Time", height=160, width=-1, no_title=True, no_mouse_pos=True):
+            with dpg.plot(label="FPS Over Time", show=False, height=160, width=-1, no_title=True, no_mouse_pos=True, tag="fps_over_time_plot"):
                 dpg.add_plot_axis(dpg.mvXAxis, label="Frame", tag="_fps_x_axis")
                 dpg.add_plot_axis(dpg.mvYAxis, label="FPS", tag="_fps_y_axis")
                 dpg.add_line_series(list(range(len(self.fps_values))), self.fps_values, parent="_fps_y_axis", tag="line_series_fps_log")
@@ -292,6 +298,10 @@ class NeRFSimGUI:
                 # dpg.set_axis_limits_auto("_fps_y_axis")
                 dpg.set_axis_limits("_fps_x_axis", 0, 30)
                 dpg.set_axis_limits("_fps_y_axis", 10, 20)
+
+            # with dpg.group(horizontal=True):
+            #     dpg.add_text("SPP: ")
+            #     dpg.add_text("1", tag="_log_spp")
 
             # rendering options
             with dpg.collapsing_header(label="Options", default_open=True):
