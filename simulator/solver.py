@@ -576,11 +576,11 @@ class Simulator:
     def update_force(self, vid, f):
         f = f.to(dtype=torchfloat).cuda()
         self.dof_f = torch.zeros((self.dof.size(0) // 3, 3), dtype=torchfloat)
-        m = self.mass[vid]
+        m = self.IP_rho[vid] * (self.dx ** 3)
         for i in range(8):
-            kid = self.pts_kernel[vid, i]
+            kid = self.IP_kernel[vid, i]
             for j in range(10):
-                self.dof_f[kid * 10 + j] += m * self.pts_Nx[vid, i][j] * f
+                self.dof_f[kid * 10 + j] += m * self.IP_Nx[vid, i][j] * f
 
         self.dof_f = self.dof_f.reshape(-1)
 
