@@ -1242,7 +1242,6 @@ __global__ void kernel_march_rays_quadratic_bending(
             float ps[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
             for(int k=0; k<n_IP; k++)
             {
-                assert(k < 3);
                 assert(IPs[k] != -1);
                 assert(IPs[k] < n_vtx);
                 const float* pk = &p_ori[IPs[k] * 3];

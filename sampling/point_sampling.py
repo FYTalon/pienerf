@@ -328,4 +328,15 @@ if __name__ == "__main__":
     # --dataset_type synthetic --workspace ../model/chair --exp_name chair_s  --sub_coeff 0.25 --sub_res 40
     # --dataset_type synthetic --workspace ../model/chair --exp_name chair --sub_coeff 0.55 --sub_res 60
 
-
+# --cb_x1
+# 0.0
+# --cb_x2
+# 2.0
+# --cb_y1
+# -2.0
+# --cb_y2
+# 1.0
+# --cb_z1
+# -1.42
+# --cb_z2
+# 0.92

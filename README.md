@@ -6,117 +6,66 @@ Yutao Feng<sup>1,2</sup>\*, Yintong Shang<sup>1</sup>\*, Xuan Li<sup>3</sup>, Ti
 <sup>1</sup>University of Utah, <sup>2</sup>Zhejiang University, <sup>3</sup>University of California, Los Angeles <br>
 *Equal contributions
 
-![teaser-1.jpg](_resources/teaser-1.jpg)
-
 Abstract: *We show that physics-based simulations can be seamlessly integrated with NeRF to generate high-quality elastodynamics of real-world objects. Unlike existing methods, we discretize nonlinear hyperelasticity in a meshless way, obviating the necessity for intermediate auxiliary shape proxies like a tetrahedral mesh or voxel grid. A quadratic generalized moving least square (Q-GMLS) is employed to capture nonlinear dynamics and large deformation on the implicit model. Such meshless integration enables versatile simulations of complex and codimensional shapes. We adaptively place the least-square kernels according to the NeRF density field to significantly reduce the complexity of the nonlinear simulation. As a result, physically realistic animations can be conveniently synthesized using our method for a wide range of hyperelastic materials at an interactive rate.*
 
 ## News
 - [2024-03-10] Code Release.
 - [2024-02-27] Our paper has been accpetd by CVPR 2024!
 
-## Cloning the Repository
-This repository uses original gaussian-splatting as a submodule. Use the following command to clone:
-
-```shell
-git clone --recurse-submodules git@github.com:XPandora/PhysGaussian.git
-```
-
 ## Setup
 
+The following setup is tested on Windows 11, with RTX 3060 and RTX 4080.
+
+### Cloning the Repository
+
+```
+git clone https://github.com/FYTalon/pienerf.git
+```
+
 ### Python Environment
-To prepare the Python environment needed to run PhysGaussian, execute the following commands:
-```shell
-conda create -n PhysGaussian python=3.9
-conda activate PhysGaussian
 
-pip install -r requirements.txt
-pip install -e gaussian-splatting/submodules/diff-gaussian-rasterization/
-pip install -e gaussian-splatting/submodules/simple-knn/
+To prepare the Python environment needed to run PIE-NeRF, execute the following commands:
+```shell
+conda create -n pienerf python=3.10
+conda activate pienerf
+conda install ninja trimesh opencv tensorboardX numpy pandas tqdm matplotlib rich packaging scipy -c conda-forge
+pip install imageio lpips torch-ema PyMCubes pysdf dearpygui torchmetrics
+pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
+pip install git+https://github.com/NVlabs/tiny-cuda-nn/#subdirectory=bindings/torch
+pip install warp-lang==0.13.0 plyfile kornia
+SET DISTUTILS_USE_SDK=1
+# run the following line in each folder: raymarching, shencoder, gridencoder 
+python setup.py build_ext --inplace && pip install .
 ```
-By default, We use pytorch=2.0.0+cu118.
 ### Quick Start
-We provide several pretrained [Gaussian Splatting models](https://drive.google.com/drive/folders/1EMUOJbyJ2QdeUz8GpPrLEyN4LBvCO3Nx?usp=drive_link) and their corresponding `.json` config files in the `config` directory.
+We provide several pretrained NeRF models and sampled point cloud files (with configs encoded) [here](https://drive.google.com/drive/folders/1gF56IjQpdXauV9gP8vbouRTnuwxR7mxa).
 
-To simulate a reconstructed 3D Gaussian Splatting scene, run the following command:
+To simulate a reconstructed NeRF scene, run the following command:
 ```shell
-python gs_simulation.py --model_path <path to gs model> --output_path <path to output folder> --config <path to json config file> --render_img --compile_video
+python main.gui.py --dataset_type synthetic --workspace model/chair --exp_name chair -O --max_iter_num 1 --num_seek_IP 3 --sim_dx 0.05
 ```
-The images and video results will be saved to the specified output_path.
+Press space to start simulation (or press again to pause). Left click on the object while ctrl is pressed to add force. Press key Q or right click to stop force.
 
-If you want a quick try, run:
-```shell
-pip install gdown
-bash download_sample_model.sh
-python gs_simulation.py --model_path ./model/ficus_whitebg-trained/ --output_path output --config ./config/ficus_config.json --render_img --compile_video --white_bg
-```
+![](\assets\gui.png)
 
-## Custom Dynamics
-To generate custom dynamics, follow these guidelines:
 
-### Gaussian Splatting Reconstruction
-Begin by reconstructing a 3D GS scene as per [Gaussian Splatting](https://github.com/graphdeco-inria/gaussian-splatting).
 
-### Data Preprocessing
-Before simulating Gaussian kernels as continuum particles, perform the following preprocessing steps:
-1. Remove Gaussian kernels with low opacity.
-2. Rotate the 3D scene to make it align with the coordinate plane (e.g., bottom surface parallel to the xy plane).
-3. Define a cuboid simulation area.
-4. Center and scale the simulation area within a unit cube.
-5. Optionally, fill internal voids with particles.
+### Parameters
+Key command line parameters include:
 
-Related parameters, such as rotation axis and degree, should be provided in the config file. For [Nerf Synthetic Dataset](https://drive.google.com/file/d/18JxhpWD-4ZmuFKLzKlAw-w5PpzZxXOcG/view?usp=drive_link), the reconstructed results typically already align with the axis.  For custom datasets, we use 3D software, e.g. [Houdini](https://www.sidefx.com/), to view the distribution of the Gaussian kernels and determine how to rotate and select the scene for simulation readiness.
-
-### Config Json File
-A single `.json` file should detail all data preprocessing and simulation parameters for each scene. Key parameters include:
-
-- Data Preprocessing Parameters:
-    - `opacity_threshold`: Filters out Gaussian kernels with opacity below this threshold.
-    - `rotation_degree (list)` and `rotation_axis (list)`: Rotate the scene to align with the grid.
-    - `sim_area (list)`: Choose the particles within a bounding box for simulation. The expected format is `[xmin, xmax, ymin, ymax, zmin, zmax]`.
-    - `particle_filling (dict)`: Specify a cubic area to fill internal particles. Tuning ```density_threshold``` and ```search_threshold``` is usually needed for optimal filling results. See more details below.
+- Point Sampling Parameters:
+    - `sub_coeff`: The bigger, the more boundary points sampled.
+    - `sub_res`: The bigger, the more grid points sampled.
 - Simulation Parameters:
-    - `material`: Available material types include `jelly`, `metal`, `sand`, `foam`, `snow` and `plasticine`.
-    - `E`: Young's modulus 
-    - `nu`: Poisson's Ratio
-    - `density`: Material density  
-    - `g`: Gravity
-    - `substep_dt`: Simulation time step size 
-    - `n_grid`: MPM grid size
-    - `boundary_conditions (list)`: Boundary conditions can be enforced on either particles or grids, allowing manipulation of Gaussian kernels via external forces.
-- Export Parameters:
-    - `frame_dt`: Duration of each frame
-    - `frame_num`: Total number of frames to export
-    - `default_camera_index`: Camera view index from the training set
+    - `sim_dt`: 
+    - `sim_dx`:
+    - `sim_iters`:
+    - `sim_stiff`
+- Rendering Parameters:
+    - `max_iter_num`: For quadratic ray bending. The maximum number of of Newton iterations when solving for the rest shape position. More iterations give (possibly) better rendering quality and slower rendering speed.
+    - `num_seek_IP`: For quadratic ray bending. The number of IPs to seek for each query point. At most 3 (i.e., valid values are 1, 2, 3). The rest position will be weighted sum of rest positions calculated by these IPs.
 
-Please see sample config files under the `config` folder for reference. 
 
-#### Particle Filling
-Optionally, we employ a ray-collision-based method to detect inner grids for particle filling. To use this, specify the following parameters:
-
-- `n_grid`: Particle filling grid size.
-- `density_threshold`: Grid cells with density above this threshold will be treated as part of the surface shell.
-- `search_exclude_direction`: A parameter (list of ints) for internal filling condition 1 in PhysGaussian. We won't cast rays in these excluded directions. The mapping between ints and directions is: 0, 1, 2, 3, 4, 5 (+x, -x, +y, -y, +z, -z).
-- `ray_cast_direction`: tA parameter for internal filling condition 2 in PhysGaussian. Along this direction, we will detect the number of collision times. The mapping between ints and directions is the same as `search_exclude_direction`.
-- `max_particles_per cell`: The number of particles to fill for each grid cell.
-- `boundary`: Specify a well-reconstructed cubic area to perform particle filling.
-
-Note: This particle filling algorithm is sensitive to Gaussian kernel distribution and may produce unsatisfying filling results if Gaussians are too noisy.
-
-#### Boundary Condition
-To fix or move the reconstructed object, specify the boundary condition either on grids or particles. Some commonly used boundary condition types include:
-
-- `bounding_box`: Prevents particles from moving outside the MPM simulation area.
-- `cuboid`: Enforces a boundary condition on the grid. Also specify other necessary parameters:
-    - `point`: Center of the cubic area, e.g. `[1, 1, 1]`
-    - `size`: Size of the cubic area (half of the width, height and depth), e.g. `[0.2, 0.2, 0.2]`
-    - `vecloticy`: Velocity assigned to the grids, e.g. `[0, 0, 0]`
-    - `start_time` and `end_time`: Time duration of this boundary condition
-- `enforce_particle_translation`: Enforces a boundary condition on particles with parameters similar to those for grids.
-
-## TODO
-
-- Add more pretrained models.
-- Colab script.
 
 ## Citation
 

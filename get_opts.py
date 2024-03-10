@@ -91,8 +91,8 @@ def get_shared_opts(parser):
 
     opt = parser.parse_args()
     opt.hash_grid_size = 1.2 * opt.sim_dx
-    if opt.num_seek_IP > 10:
-        opt.num_seek_IP = 10
+    opt.num_seek_IP = max(min(3, opt.num_seek_IP), 1)
+    print(f"num_seek_IP={opt.num_seek_IP}")
 
     if opt.dataset_type == "synthetic":
         opt.scale = 0.8
