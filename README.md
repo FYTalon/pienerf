@@ -16,6 +16,8 @@ Abstract: *We show that physics-based simulations can be seamlessly integrated w
 
 The following setup is tested on Windows 11, with RTX 3060 and RTX 4080.
 
+Our code is developed based on [torch-ngp](https://github.com/ashawkey/torch-ngp), a pytorch implementation of Instant-NGP.
+
 ### Cloning the Repository
 
 ```
@@ -40,7 +42,18 @@ python setup.py build_ext --inplace && pip install .
 ### Quick Start
 We provide several pretrained NeRF models and sampled point cloud files (with configs encoded) [here](https://drive.google.com/drive/folders/1gF56IjQpdXauV9gP8vbouRTnuwxR7mxa).
 
-To simulate a reconstructed NeRF scene, run the following command:
+To simulate a reconstructed NeRF scene, 
+
+first sample point cloud (the path `model/chair` should contain a file like `checkpoints/ngp*.pth`)
+
+```
+python point_sampling.py --dataset_type synthetic --workspace model/chair --exp_name chair_s  --sub_coeff 0.25 --sub_res 40
+```
+
+or you can skip this step by using provided point cloud.
+
+Putting `chair.ply` into folder `model/chair`, and run
+
 ```shell
 python main.gui.py --dataset_type synthetic --workspace model/chair --exp_name chair -O --max_iter_num 1 --num_seek_IP 3 --sim_dx 0.05
 ```
