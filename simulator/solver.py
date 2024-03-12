@@ -14,13 +14,15 @@ class Simulator:
             self,
             dt=1e-2,
             iters=20,
-            bbox=torch.tensor([2.0, 2.0, 2.0], dtype=torchfloat),
+            bbox=torch.tensor([1.0, 1.0, 1.0], dtype=torchfloat),
             kres=7,
             dx=1,
             gravity=torch.tensor([0.0, -9.8, 0.0], dtype=torchfloat),
             stiff=1e5,
             base=torch.tensor([-0.5, -0.5, -0.5], dtype=torchfloat)
     ):
+        bbox *= 1.02
+        base *= 1.01
         bbox = bbox.to(dtype=torchfloat).cuda()
         gravity = gravity.to(dtype=torchfloat).cuda()
         base = base.to(dtype=torchfloat).cuda()

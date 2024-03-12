@@ -9,6 +9,7 @@ Yutao Feng<sup>1,2</sup>\*, Yintong Shang<sup>1</sup>\*, Xuan Li<sup>3</sup>, Ti
 Abstract: *We show that physics-based simulations can be seamlessly integrated with NeRF to generate high-quality elastodynamics of real-world objects. Unlike existing methods, we discretize nonlinear hyperelasticity in a meshless way, obviating the necessity for intermediate auxiliary shape proxies like a tetrahedral mesh or voxel grid. A quadratic generalized moving least square (Q-GMLS) is employed to capture nonlinear dynamics and large deformation on the implicit model. Such meshless integration enables versatile simulations of complex and codimensional shapes. We adaptively place the least-square kernels according to the NeRF density field to significantly reduce the complexity of the nonlinear simulation. As a result, physically realistic animations can be conveniently synthesized using our method for a wide range of hyperelastic materials at an interactive rate.*
 
 ## News
+
 - [2024-03-10] Code Release.
 - [2024-02-27] Our paper has been accpetd by CVPR 2024!
 
@@ -39,29 +40,83 @@ SET DISTUTILS_USE_SDK=1
 # run the following line in each folder: raymarching, shencoder, gridencoder 
 python setup.py build_ext --inplace && pip install .
 ```
-### Quick Start
+## Quick Start
+### Train (skippable)
+
 We provide several pretrained NeRF models and sampled point cloud files (with configs encoded) [here](https://drive.google.com/drive/folders/1gF56IjQpdXauV9gP8vbouRTnuwxR7mxa).
 
-To simulate a reconstructed NeRF scene, 
+If you want to train your own NeRF model, you can run (**you need to change the first argument to the actual path your dataset lies in**, datasets can be downloaded [here](https://drive.google.com/drive/folders/128yBriW1IG_3NJ5Rp7APSTZsJqdJdfc1))
 
-first sample point cloud (the path `model/chair` should contain a file like `checkpoints/ngp*.pth`)
+e.g. for nerf synthetic data,
 
 ```
-python point_sampling.py --dataset_type synthetic --workspace model/chair --exp_name chair_s  --sub_coeff 0.25 --sub_res 40
+python main_train.py D:/Data/nerf_synthetic/lego --iters 30000 --scale 0.8 --bound 1.0 --dt_gamma 0.0 --W 800 --H 800 -O
 ```
 
-or you can skip this step by using provided point cloud.
+and for other dataset,
 
-Putting `chair.ply` into folder `model/chair`, and run
+```
+python main_nerf.py D:/Data/nerf_llff_data/trex -O
+```
+
+For explanation of arguments used here, please refer to [torch-ngp](https://github.com/ashawkey/torch-ngp).
+
+Trained results including checkpoints are stored in the folder `model/`.
+
+### Sample (skippable)
+
+To simulate a reconstructed NeRF scene, you can use one of our provided point clouds [here](https://drive.google.com/drive/folders/1gF56IjQpdXauV9gP8vbouRTnuwxR7mxa). 
+
+Or if you want to get a customized point cloud, you can run 
+
+```
+python point_sampling.py --dataset_type synthetic --workspace ../model/chair --exp_name chair_0  --sub_coeff 0.25 --sub_res 40
+```
+
+where the path `model/chair` should contain a file like `checkpoints/ngp*.pth`, and `sub_coeff` and `sub_res` controls the density of point cloud (see Section **Parameters** for details).
+
+This will generated `chair_0.ply`in the folder `model/chair`.
+
+Then, edit vertex attributes using 3D software such as Houdini, or edit the ply file as a text, to assign values for attributes `pin`, `lam`, `mu` and `mass`.
+
+Explanation of point attributes:
+
+- `vp`: volume of each point, calculated and written when running `point_sampling.py`.
+
+The following attributes need to be specified by your self:
+
+- `pin`: int, 1 or 0, where 1 means pinned. 
+- `lam` & `mu`: float, material parameters, typically 1e6
+- `mass`: float, mass of each vertex, typically 1e3*`vp`.
+
+Note: for real-world dataset, you need to first determine the bounding box of the object you want to simulate, and then set it by `--cut --cut_bounds `, where `--cut_bounds` are a list of floats ( x_min 
+
+e.g. for `nerf_llff_data/trex`, you can run
+
+```
+python point_sampling.py --workspace ../model/trex --exp_name trex_0 --sub_coeff 0.65 --sub_res 120 --density_threshold 0.04 --cut --cut_bounds -0.62 1.0 -0.82 0.42 -0.52 0.0
+```
+
+
+
+### Simulate and Render
+
+Saving edited `chair_0.ply` into folder `model/chair`, and run
 
 ```shell
-python main.gui.py --dataset_type synthetic --workspace model/chair --exp_name chair -O --max_iter_num 1 --num_seek_IP 3 --sim_dx 0.05
+python main.gui.py --dataset_type synthetic --workspace model/chair --exp_name chair_0 -O --max_iter_num 1 --num_seek_IP 3 --sim_dx 0.05
 ```
 Press space to start simulation (or press again to pause). Left click on the object while ctrl is pressed to add force. Press key Q or right click to stop force.
 
 ![](\assets\gui.png)
 
+Also pass in `--cut_bounds` if you use these bounds in sampling, e.g.
 
+```
+python main.gui.py --workspace model/trex --exp_name trex_0 -O --max_iter_num 1 --num_seek_IP 3 --sim_dx 0.05 --cut --cut_bounds -0.62 1.0 -0.82 0.42 -0.52 0.0
+```
+
+In this case, objects inside cut bounds are simulated and rendered using ray bending, while the rest is rendered as a static background.
 
 ### Parameters
 Key command line parameters include:
@@ -69,6 +124,7 @@ Key command line parameters include:
 - Point Sampling Parameters:
     - `sub_coeff`: The bigger, the more boundary points sampled.
     - `sub_res`: The bigger, the more grid points sampled.
+    - `density_threshold`: If NeRF's density is larger than this this, it is considered occupied.
 - Simulation Parameters:
     - `sim_dt`: 
     - `sim_dx`:

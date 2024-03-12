@@ -1,3 +1,5 @@
+# --dataset_type synthetic --workspace ../model/chair --exp_name chair_0 --sub_coeff 0.55 --sub_res 60
+
 import torch
 from get_opts import *
 from nerf.trainer import Trainer
@@ -7,12 +9,16 @@ import numpy as np
 import warp as wp
 from nerf.utils import get_pnts_in_grids
 
-def write_ply(filename, points, volumes):
+def write_ply(filename, points, volumes, binary=True):
     # vertex = np.array([tuple(v) for v in points], dtype=[('x', 'f8'), ('y', 'f8'), ('z', 'f8')])  # f8: float64
     vertex = np.array([tuple(v) + (vp,) for v, vp in zip(points, volumes)],
                       dtype=[('x', 'f8'), ('y', 'f8'), ('z', 'f8'), ('vp', 'f8')])
     el = PlyElement.describe(vertex, 'vertex')
-    PlyData([el]).write(filename)
+    if binary:
+        PlyData([el]).write(filename)
+    else:
+        with open(filename, 'wb') as f:
+            PlyData([el], text=True).write(f)
 
 def read_ply(filename):
     plydata = PlyData.read(filename)
@@ -155,6 +161,10 @@ class AdaptiveUniformSampling:
         self.model = model.to(self.device)
         self.grid_size = 2 * self.bound / self.res
 
+        if not os.path.exists("../model"):
+            os.mkdir("../model")
+        self.write_path = "../model/" + opt.workspace.split("/")[-1] + "/" + self.opt.exp_name
+
     def get_density(self, x):
         x = x.to(self.device)
         density = self.model.density(x.to(self.device))['sigma']
@@ -198,13 +208,39 @@ class AdaptiveUniformSampling:
 
     def sample(self):
         n_grid = self.res ** 3
-        dx = torch.linspace(-self.opt.bound, self.opt.bound, self.res)
-        x_grid, y_grid, z_grid = custom_meshgrid(dx, dx, dx)
+        if self.opt.cut:
+            if self.opt.cut_bounds[0] < -self.opt.bound: self.opt.cut_bounds[0] = -self.opt.bound
+            if self.opt.cut_bounds[2] < -self.opt.bound: self.opt.cut_bounds[2] = -self.opt.bound
+            if self.opt.cut_bounds[4] < -self.opt.bound: self.opt.cut_bounds[4] = -self.opt.bound
+            if self.opt.cut_bounds[1] > self.opt.bound: self.opt.cut_bounds[1] = self.opt.bound
+            if self.opt.cut_bounds[3] > self.opt.bound: self.opt.cut_bounds[3] = self.opt.bound
+            if self.opt.cut_bounds[5] > self.opt.bound: self.opt.cut_bounds[5] = self.opt.bound
+            assert self.opt.cut_bounds[0] < self.opt.cut_bounds[1]
+            assert self.opt.cut_bounds[2] < self.opt.cut_bounds[3]
+            assert self.opt.cut_bounds[4] < self.opt.cut_bounds[5]
+            xs = torch.linspace(self.opt.cut_bounds[0], self.opt.cut_bounds[1], self.res)
+            ys = torch.linspace(self.opt.cut_bounds[2], self.opt.cut_bounds[3], self.res)
+            zs = torch.linspace(self.opt.cut_bounds[4], self.opt.cut_bounds[5], self.res)
+            x_grid, y_grid, z_grid = custom_meshgrid(zs, ys, xs)
+        else:
+            xs = torch.linspace(-self.opt.bound, self.opt.bound, self.res)
+            x_grid, y_grid, z_grid = custom_meshgrid(xs, xs, xs)
 
         coords = torch.stack([z_grid, y_grid, x_grid], dim=-1)
         grid_pts = coords.reshape(-1, 3).to(self.device)
 
+        # ## debug #############################################
+        # vols = self.get_point_volumes(grid_pts)
+        # density = self.get_density(grid_pts)
+        # write_ply(self.write_path + "_grid.ply", grid_pts[density > self.threshold].cpu().numpy(), vols.cpu().numpy())
+        # print("writing to ", os.path.abspath(self.write_path + "_grid.ply"))
+        # ######################################################
+
+        print(f"{grid_pts.shape[0]} grid points sampled!")
+        assert grid_pts.shape[0] > 0, "No grid points, check params!"
         grid_density = self.get_density(grid_pts).to(self.device)
+        print(grid_density)
+        print(f"grid density range: {grid_density.min()}~{grid_density.max()}")
         grid_coords = torch.zeros((n_grid,3), dtype=torch.int32, device=self.device)
         t = time.time()
         wp.launch(kernel=get_grid_coords, dim=(n_grid,),
@@ -257,32 +293,29 @@ class AdaptiveUniformSampling:
                       wp.from_torch(pnts_add, dtype=wp.vec3f),
                   ],
                   device=self.device)
-
-        # print(grid_pts.shape[0])
-        # print(pnts_add.shape[0])
-        # print(pnts_add.min(dim=0).values, pnts_add.max(dim=0).values)
-
-        if not os.path.exists("../model"):
-            os.mkdir("../model")
-        write_path = "../model/" + opt.workspace.split("/")[-1] + "/" + self.opt.exp_name
+        assert pnts_add.shape[0] > 0, "No boundary points sampled, check params!"
+        print(f"{pnts_add.shape[0]} boundary points sampled!")
+        # ## debug #############################################
+        # vols = self.get_point_volumes(pts)
+        # density = self.get_density(pnts_add)
+        # write_ply(self.write_path + "_add.ply", pnts_add[density > self.threshold], vols)
+        # print("writing to ", os.path.abspath(self.write_path + "_add.ply"))
+        # ######################################################
 
         pts = pnts_add.clone()
         pts = torch.cat((pts, grid_pts + 0.5 * 2 * self.opt.bound / float(self.res)), dim=0)
         density = self.get_density(pts)
         pts = pts[density > self.threshold]
+        assert pts.shape[0] > 0, "No points sampled, check params!"
 
         vols = self.get_point_volumes(pts)
 
-        write_ply(write_path + ".ply", pts.cpu().numpy(), vols.cpu().numpy())
-        print("writing to ", os.path.abspath(write_path + ".ply"))
+        print(f"{pts.shape[0]} points kept after thresholding!")
+        write_ply(self.write_path + ".ply", pts.cpu().numpy(), vols.cpu().numpy())
+        print("writing to ", os.path.abspath(self.write_path + ".ply"))
 
-        # density = self.get_density(pnts_add)
-        # pnts_add = pnts_add[density > self.threshold]
-        # write_ply(write_path + "_add.ply", pnts_add)
-        #
-        # density = self.get_density(grid_pts)
-        # grid_pts = grid_pts[density > self.threshold]
-        # write_ply(write_path + "_grid.ply", grid_pts)
+
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -325,18 +358,3 @@ if __name__ == "__main__":
 
     AdaptiveUniformSampling(opt, model).sample()
 
-    # --dataset_type synthetic --workspace ../model/chair --exp_name chair_s  --sub_coeff 0.25 --sub_res 40
-    # --dataset_type synthetic --workspace ../model/chair --exp_name chair --sub_coeff 0.55 --sub_res 60
-
-# --cb_x1
-# 0.0
-# --cb_x2
-# 2.0
-# --cb_y1
-# -2.0
-# --cb_y2
-# 1.0
-# --cb_z1
-# -1.42
-# --cb_z2
-# 0.92

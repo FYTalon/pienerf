@@ -38,7 +38,7 @@ def get_shared_opts(parser):
     parser.add_argument('--preload', action='store_true',
                         help="preload all data into GPU, accelerate training but use more GPU memory")
     # (the default value is for the fox dataset)
-    parser.add_argument('--bound', type=float, default=2,
+    parser.add_argument('--bound', type=float, default=2.0,
                         help="assume the scene is bounded in box[-bound, bound]^3, if > 1, will invoke adaptive ray marching.")
 
     parser.add_argument('--scale', type=float, default=0.33, help="scale camera location into box[-bound, bound]^3")
@@ -76,6 +76,8 @@ def get_shared_opts(parser):
     parser.add_argument('--density_threshold', type=float, default=0.05)
     parser.add_argument('--sub_coeff', type=float, default=0.1, help="bigger, more boundary points")
     parser.add_argument('--sub_res', type=int, default=20, help="bigger, more grid points")
+    parser.add_argument('--cut', action='store_true')
+    parser.add_argument('--cut_bounds', nargs=6, type=float, default=[0.0,2.0,-2.0,1.0,-1.42,0.92])
 
     # rendering settings
     parser.add_argument('--num_seek_IP', type=int, default=1)
@@ -100,11 +102,12 @@ def get_shared_opts(parser):
         opt.dt_gamma = 0.0
         opt.W = 800
         opt.H = 800
-    elif opt.dataset_type == "colmap":
+    # elif opt.dataset_type == "colmap":
+    else:
         opt.scale = 0.33
         opt.bound = 2.0
-        opt.W = 1080
-        opt.H = 1920
+        opt.W = 1920
+        opt.H = 1080
 
     if opt.O:
         opt.fp16 = True

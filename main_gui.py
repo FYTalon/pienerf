@@ -46,7 +46,7 @@ if __name__ == '__main__':
     sim = Simulator(
         dt=opt.sim_dt,
         iters=opt.sim_iters,
-        bbox=torch.tensor([2*opt.bound, 2*opt.bound, 2*opt.bound]),
+        bbox=torch.tensor([2.0*opt.bound, 2.0*opt.bound, 2.0*opt.bound]),
         dx=opt.sim_dx,
         stiff=opt.sim_stiff,
         base=torch.tensor([-opt.bound, -opt.bound, -opt.bound])
