@@ -3,8 +3,29 @@ import torch
 import numpy as np
 import dearpygui.dearpygui as dpg
 from scipy.spatial.transform import Rotation as R
-
+import json
 from .utils import *
+from .provider import nerf_matrix_to_ngp
+
+def get_pose(file_dir, frame_str):
+    try:
+        file_path = file_dir + "/transforms_train.json"
+        with open(file_path) as file:
+            data = json.load(file)
+    except FileNotFoundError:
+        try:
+            file_path = file_dir + "/transforms.json"
+            with open(file_path) as file:
+                data = json.load(file)
+        except FileNotFoundError:
+            print("no transforms found in ", file_dir, "!!!")
+            return None
+    for frame in data["frames"]:
+        if frame_str in frame["file_path"]:
+            print("reading pose from ", file_path, frame_str, "...")
+            return np.array(frame["transform_matrix"], dtype=np.float32)
+    print("no pose named", frame_str, "in ", file_path)
+    return None
 
 def clamp(value, min_value, max_value):
     return max(min_value, min(value, max_value-1))
@@ -19,7 +40,11 @@ class OrbitCamera:
         self.rot = R.from_quat([1, 0, 0, 0]) # init camera matrix: [[1, 0, 0], [0, -1, 0], [0, 0, 1]] (to suit ngp convention)
         self.up = np.array([0, 1, 0], dtype=np.float32) # need to be normalized!
 
-    # pose
+    def pose_to_params(self, pose):
+        self.radius = - self.center[2] + pose[:3, 3][2] # assuming center not changed
+        rotation_matrix = pose[:3, :3]
+        self.rot = R.from_matrix(rotation_matrix)
+
     @property
     def pose(self):
         # first move camera to radius
@@ -33,7 +58,6 @@ class OrbitCamera:
         res[:3, 3] -= self.center
         return res
 
-    # intrinsics
     @property
     def intrinsics(self):
         focal = self.H / (2 * np.tan(np.radians(self.fovy) / 2))
@@ -466,7 +490,7 @@ class NeRFSimGUI:
         self.spp = 1  # sample per pixel
         self.mode = 'image'  # choose from ['image', 'depth']
 
-        self.dynamic_resolution = False
+        self.dynamic_resolution = True
         self.downscale = 1
         self.train_steps = 16
 
@@ -579,9 +603,9 @@ class NeRFSimGUI:
 
             # update dynamic resolution
             if self.dynamic_resolution:
-                # max allowed infer time per-frame is 200 ms
+                # max allowed infer time per-frame is 80 ms
                 full_t = t / (self.downscale ** 2)
-                downscale = min(1, max(1 / 4, math.sqrt(200 / full_t)))
+                downscale = min(1, max(1 / 4, math.sqrt(80 / full_t)))
                 if downscale > self.downscale * 1.2 or downscale < self.downscale * 0.8:
                     self.downscale = downscale
 
@@ -672,6 +696,21 @@ class NeRFSimGUI:
             with dpg.group(horizontal=True):
                 dpg.add_text("Infer time: ")
                 dpg.add_text("no data", tag="_log_infer_time")
+
+            def callback_load_pose(sender, app_data, user_data):
+                pose_id = dpg.get_value(sender)
+                pose = get_pose(self.opt.path, pose_id)
+                if pose is not None:
+                    pose = nerf_matrix_to_ngp(pose, scale=self.opt.scale, offset=self.opt.offset)
+                    self.cam.pose_to_params(pose)
+                    self.need_update = True
+
+            with dpg.group(horizontal=True):
+                dpg.add_input_text(label="<- input pose ID & enter", default_value="330",
+                               on_enter=True, callback=callback_load_pose, width=100)
+                dpg.add_button(label="?", width=20, tag='pose_hint_button')
+            with dpg.tooltip('pose_hint_button'):
+                dpg.add_text('Pose ID is a substring of "file_path" attribute in transforms(_train).json, e.g., 400 for dataset trex')
 
             def callback_render_IP(sender, app_data):
                 self.render_IP = not self.render_IP

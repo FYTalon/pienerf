@@ -769,6 +769,10 @@ class NeRFRenderer(nn.Module):
         max_iter_num = kwargs.get('max_iter_num')
         # res = kwargs.get('hash_grid_res') # int, ==16
         hgs = kwargs.get('hash_grid_size') # float, ==0.05
+        bound = kwargs.get('bound') # float
+        cut = kwargs.get('cut') # bool
+        cut_bounds = kwargs.get('cut_bounds') # float[6]
+        cut_bounds = torch.tensor(cut_bounds, dtype=dtype, device=device)
 
         p_def = self.p_def.contiguous()
         p_ori = self.p_ori.contiguous()
@@ -777,13 +781,18 @@ class NeRFRenderer(nn.Module):
 
         bmin = p_def.min(axis=0).values
         bmax = p_def.max(axis=0).values
+        if cut:
+            bmin = -bound * torch.ones(3, dtype=dtype)
+            bmax = bound * torch.ones(3, dtype=dtype)
         marg = 1e-3
         bbmin = bmin - marg * torch.ones(3, dtype=dtype)
         bbmax = bmax + marg * torch.ones(3, dtype=dtype)
         # hgs = (bbmax - bbmin) / float(res) # wrong, sh grid should be cube, not cuboid
         resolution = torch.ceil((bbmax - bbmin) / hgs).to(torch.int32)
 
-        # aabb = self.aabb_train if self.training else self.aabb_infer
+        # if cut:
+        #     aabb = self.aabb_train if self.training else self.aabb_infer
+        # else:
         aabb = torch.cat((bbmin, bbmax), dim=0)
         nears, fars = raymarching.near_far_from_aabb(rays_o, rays_d, aabb, self.min_near)
 
@@ -847,17 +856,16 @@ class NeRFRenderer(nn.Module):
                 max_iter_num,
                 bbmin, bbmax, hgs, resolution,
                 num_seek_IP, self.IP_dx,
+                cut, cut_bounds,
 
                 n_alive, n_step, rays_alive, rays_t, rays_o, rays_d,
                 self.bound, self.density_bitfield, self.cascade,
                 self.grid_size, nears, fars, 128,
                 perturb if step == 0 else False, dt_gamma, max_steps)
-            # 90-100 ms
 
             # xyzs, dirs, deltas = raymarching.march_rays(n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, self.bound,
             #                                             self.density_bitfield, self.cascade, self.grid_size, nears,
             #                                             fars, 128, perturb if step == 0 else False, dt_gamma, max_steps)
-            # 80-90 ms
 
             if timing_on:
                 t1 = t1 - time.time()

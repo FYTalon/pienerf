@@ -1,6 +1,7 @@
 import argparse
 
 def get_shared_opts(parser):
+    parser.add_argument('path', type=str)
 
     parser.add_argument('-O', action='store_true', help="equals --fp16 --cuda_ray --preload")
     parser.add_argument('--test', action='store_true', help="test mode")
@@ -102,12 +103,11 @@ def get_shared_opts(parser):
         opt.dt_gamma = 0.0
         opt.W = 800
         opt.H = 800
-    # elif opt.dataset_type == "colmap":
-    else:
-        opt.scale = 0.33
-        opt.bound = 2.0
-        opt.W = 1920
-        opt.H = 1080
+    # else:
+    #     opt.scale = 0.33
+    #     opt.bound = 2.0
+    #     opt.W = 1920
+    #     opt.H = 1080
 
     if opt.O:
         opt.fp16 = True

@@ -1136,6 +1136,8 @@ __global__ void kernel_march_rays_quadratic_bending(
     const int* __restrict__ resolution,
     const int num_seek_IP,
     const float IP_dx,
+    const bool cut,
+    const float* __restrict__ cut_bounds,
 
     const uint32_t n_alive,
     const uint32_t n_step,
@@ -1188,178 +1190,197 @@ __global__ void kernel_march_rays_quadratic_bending(
 
     while (t < far && step < n_step)
     {
-        bool found = true;
+        bool found = false;
 
-        float x = clamp(ox + t * dx, bbmin[0], bbmax[0]-1e-6);
-        float y = clamp(oy + t * dy, bbmin[1], bbmax[1]-1e-6);
-        float z = clamp(oz + t * dz, bbmin[2], bbmax[2]-1e-6);
+        float x, y, z; 
 
-        //raybending-------------kernel_march_rays_qb-----------------------------------------------------------------
-        float x_map = 0.0;
-        float y_map = 0.0;
-        float z_map = 0.0;
-        int g0 = floor((x - bbmin[0])/hgs);
-        int g1 = floor((y - bbmin[1])/hgs);
-        int g2 = floor((z - bbmin[2])/hgs);
-        if (g0 < 0 || g1 < 0 ||g2 < 0 || g0 >= resolution[0] || g1 >= resolution[1] ||g2 >= resolution[2])
-            printf("ERROR: g0=%i, g1=%i, g2=%i, xyz:(%f,%f,%f), bbmin:(%f,%f,%f)\n", g0, g1, g2, x, y, z, bbmin[0], bbmin[1], bbmin[2]);
-        int gid = g2 * resolution[1] * resolution[0] + g1 * resolution[0] + g0;
-
-        int IPs[10] = {-1,-1,-1,-1,-1,-1,-1,-1,-1,-1};
-        int n_IP = 0;
-        if (num_seek_IP == 1)
+        if (cut)
         {
-            int ip = find_closest_IP(x, y, z, p_def, n_grid, g0, g1, g2, resolution, pig_cnt, pig_bgn, pig_idx);
-            if (ip == -1)
-                n_IP = 0;
+            x = clamp(ox + t * dx, -bound, bound);
+            y = clamp(oy + t * dy, -bound, bound);
+            z = clamp(oz + t * dz, -bound, bound);
+        }
+        else
+        {
+            x = clamp(ox + t * dx, bbmin[0], bbmax[0]-1e-6);
+            y = clamp(oy + t * dy, bbmin[1], bbmax[1]-1e-6);
+            z = clamp(oz + t * dz, bbmin[2], bbmax[2]-1e-6);
+        }
+
+        if (!cut || (x > cut_bounds[0] && x < cut_bounds[1] && y > cut_bounds[2] && x < cut_bounds[3] && z > cut_bounds[4] && z < cut_bounds[5]))
+//         if (!cut || (x > cut_bounds[4] && x < cut_bounds[5] && y > cut_bounds[2] && x < cut_bounds[3] && z > cut_bounds[0] && z < cut_bounds[1]))
+        {
+
+            //raybending-------------kernel_march_rays_qb-----------------------------------------------------------------
+            float x_map = 0.0;
+            float y_map = 0.0;
+            float z_map = 0.0;
+            int g0 = floor((x - bbmin[0])/hgs);
+            int g1 = floor((y - bbmin[1])/hgs);
+            int g2 = floor((z - bbmin[2])/hgs);
+            if (g0 < 0 || g1 < 0 ||g2 < 0 || g0 >= resolution[0] || g1 >= resolution[1] ||g2 >= resolution[2])
+                printf("ERROR: g0=%i, g1=%i, g2=%i, xyz:(%f,%f,%f), bbmin:(%f,%f,%f)\n", g0, g1, g2, x, y, z, bbmin[0], bbmin[1], bbmin[2]);
+            int gid = g2 * resolution[1] * resolution[0] + g1 * resolution[0] + g0;
+
+            int IPs[10] = {-1,-1,-1,-1,-1,-1,-1,-1,-1,-1};
+            int n_IP = 0;
+            if (num_seek_IP == 1)
+            {
+                int ip = find_closest_IP(x, y, z, p_def, n_grid, g0, g1, g2, resolution, pig_cnt, pig_bgn, pig_idx);
+                if (ip == -1)
+                    n_IP = 0;
+                else
+                {
+                    n_IP = 1;
+                    IPs[0] = ip;
+                }
+            }
             else
+                n_IP = find_closest_IPs(x, y, z, p_def, n_grid, g0, g1, g2, resolution, pig_cnt, pig_bgn, pig_idx, IPs, num_seek_IP);
+            if(n_IP <= 0)
+                found = false;
+            else
+                found = true;
+            if(found)
             {
-                n_IP = 1;
-                IPs[0] = ip;
+                for(int k=0; k<n_IP; k++)
+                {
+                    const float* pk_ = &p_def[IPs[k] * 3];
+                    if (pk_[0] <= bbmin[0] || pk_[1] <= bbmin[1] || pk_[2] < bbmin[2] || pk_[0] >= bbmax[0] || pk_[1] >= bbmax[1] || pk_[2] >= bbmax[2])
+                        n_IP--;
+                }
             }
-        }
+            if(n_IP <= 0)
+                found = false;
+            if(found)
+            {
+                int itr_sum = 0;
+                const float p_[3] = {x, y, z};//deformed position
+                float ps[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+                for(int k=0; k<n_IP; k++)
+                {
+                    assert(IPs[k] != -1);
+                    assert(IPs[k] < n_vtx);
+                    const float* pk = &p_ori[IPs[k] * 3];
+                    const float* pk_ = &p_def[IPs[k] * 3];
+                    const float* Fk = &F_IP[IPs[k] * 9];
+                    const float* dFk = &dF_IP[IPs[k] * 27];
+                    float p[3] = {pk[0], pk[1], pk[2]};//initial rest position, using deformed position as initial guess
+                    int num_itr = 0;
+                    float q_[3] = {0.0, 0.0, 0.0};
+                    minus(p_, pk_, q_);
+                    while(num_itr < max_iter_num)
+                    {
+                        float q[3] = {0.0, 0.0, 0.0};
+                        minus(p, pk, q);
+
+                        float dFk_q[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}; // dF dot q
+                        dot31(dFk, q, dFk_q);
+                        float A[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+                        for(int j=0; j<9; j++)
+                        {
+                            A[j] = Fk[j] + dFk_q[j];
+                        }
+                        float A_inv[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+                        bool success = inv3x3(A, A_inv);
+                        if (success == -1)
+                            break;
+
+                        float b[3] = {0.0, 0.0, 0.0};
+                        float Fk_q[3] = {0.0, 0.0, 0.0};
+                        mul31(Fk, q, Fk_q);
+                        float dFk_q_q[3] = {0.0, 0.0, 0.0}; // dF dot q dot q
+                        mul31(dFk_q, q, dFk_q_q);
+
+                        for(int i=0; i<3; i++)
+                        {
+                            b[i] = Fk_q[i] + 0.5 * dFk_q_q[i] - q_[i];
+                        }
+
+                        float dq[3] = {0.0, 0.0, 0.0};
+                        mul31(A_inv, b, dq);
+                        p[0] -= dq[0];
+                        p[1] -= dq[1];
+                        p[2] -= dq[2];
+
+                        if (dq[0]*dq[0] + dq[1]*dq[1] + dq[2]*dq[2] < 1e-12)
+                        {
+                            break;
+                        }
+
+                        num_itr++;
+                    }//end while(num_itr < max_iter_num)
+
+                    float p_pk[3] = {0.0, 0.0, 0.0};
+                    minus(p, pk, p_pk);
+                    if (fabs(p_pk[0]) > IP_dx || fabs(p_pk[1]) > IP_dx || fabs(p_pk[2]) > IP_dx)
+                    {
+                        n_IP--;
+                    }
+                    ps[3 * k] = p[0];
+                    ps[3 * k + 1] = p[1];
+                    ps[3 * k + 2] = p[2];
+                    itr_sum += num_itr;
+                }//end for(int k=0; k<n_IP; k++)
+
+                if (n_IP == 1)
+                {
+                    bool check = !(ps[0]==0.0&&ps[1]==0.0&&ps[2]==0.0);
+                    if (!check)
+                        printf("ps:%f,%f,%f,%f,%f,%f,%f,%f,%f\n",ps[0],ps[1],ps[2],ps[3],ps[4],ps[5],ps[6],ps[7],ps[8]);
+                    x_map = ps[0];
+                    y_map = ps[1];
+                    z_map = ps[2];
+                }
+                else if (n_IP == 2)
+                {
+                    bool check = !(ps[0]==0.0&&ps[1]==0.0&&ps[2]==0.0) && !(ps[3]==0.0&&ps[4]==0.0&&ps[5]==0.0);
+                    if (!check)
+                        printf("ps:%f,%f,%f,%f,%f,%f,%f,%f,%f\n",ps[0],ps[1],ps[2],ps[3],ps[4],ps[5],ps[6],ps[7],ps[8]);
+                    float dist[2] = {0.0, 0.0};
+                    for(int k=0; k<2; k++)
+                    {
+                        const float* pk = &p_ori[IPs[k] * 3];
+                        dist[k] = sqrt((pk[0]-x)*(pk[0]-x) + (pk[1]-y)*(pk[1]-y) + (pk[2]-z)*(pk[2]-z));
+                    }
+                    float dist_sum = dist[0] + dist[1];
+                    float w0 = dist[1] / dist_sum;
+                    float w1 = dist[0] / dist_sum;
+                    x_map = w0 * ps[0] + w1 * ps[3];
+                    y_map = w0 * ps[1] + w1 * ps[4];
+                    z_map = w0 * ps[2] + w1 * ps[5];
+                }
+                else if (n_IP == 3)
+                {
+                    bool check = !(ps[0]==0.0&&ps[1]==0.0&&ps[2]==0.0) && !(ps[3]==0.0&&ps[4]==0.0&&ps[5]==0.0) && !(ps[6]==0.0&&ps[7]==0.0&&ps[8]==0.0);
+                    if (!check)
+                        printf("ps:%f,%f,%f,%f,%f,%f,%f,%f,%f\n",ps[0],ps[1],ps[2],ps[3],ps[4],ps[5],ps[6],ps[7],ps[8]);
+                    float dist[3] = {0.0, 0.0, 0.0};
+                    for(int k=0; k<3; k++)
+                    {
+                        const float* pk = &p_ori[IPs[k] * 3];
+                        dist[k] = sqrt((pk[0]-x)*(pk[0]-x) + (pk[1]-y)*(pk[1]-y) + (pk[2]-z)*(pk[2]-z));
+                    }
+                    float dist_sum = dist[0] * dist[1] + dist[1] * dist[2] + dist[2] * dist[0];
+                    float w0 = dist[1] * dist[2] / dist_sum;
+                    float w1 = dist[0] * dist[2] / dist_sum;
+                    float w2 = dist[0] * dist[1] / dist_sum;
+                    x_map = w0 * ps[0] + w1 * ps[3] + w2 * ps[6];
+                    y_map = w0 * ps[1] + w1 * ps[4] + w2 * ps[7];
+                    z_map = w0 * ps[2] + w1 * ps[5] + w2 * ps[8];
+                }
+
+                x = x_map;
+                y = y_map;
+                z = z_map;
+
+            }//end if(found)
+            //end raybending--------------------------------------------------------------------------------
+        }//end if(cut)
         else
-            n_IP = find_closest_IPs(x, y, z, p_def, n_grid, g0, g1, g2, resolution, pig_cnt, pig_bgn, pig_idx, IPs, num_seek_IP);
-        if(n_IP <= 0)
-            found = false;
-        else
+        {
             found = true;
-        if(found)
-        {
-            for(int k=0; k<n_IP; k++)
-            {
-                const float* pk_ = &p_def[IPs[k] * 3];
-                if (pk_[0] <= bbmin[0] || pk_[1] <= bbmin[1] || pk_[2] < bbmin[2] || pk_[0] >= bbmax[0] || pk_[1] >= bbmax[1] || pk_[2] >= bbmax[2])
-                    n_IP--;
-            }
         }
-        if(n_IP <= 0)
-            found = false;
-        if(found)
-        {
-            int itr_sum = 0;
-            const float p_[3] = {x, y, z};//deformed position
-            float ps[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-            for(int k=0; k<n_IP; k++)
-            {
-                assert(IPs[k] != -1);
-                assert(IPs[k] < n_vtx);
-                const float* pk = &p_ori[IPs[k] * 3];
-                const float* pk_ = &p_def[IPs[k] * 3];
-                const float* Fk = &F_IP[IPs[k] * 9];
-                const float* dFk = &dF_IP[IPs[k] * 27];
-                float p[3] = {pk[0], pk[1], pk[2]};//initial rest position, using deformed position as initial guess
-                int num_itr = 0;
-                float q_[3] = {0.0, 0.0, 0.0};
-                minus(p_, pk_, q_);
-                while(num_itr < max_iter_num)
-                {
-                    float q[3] = {0.0, 0.0, 0.0};
-                    minus(p, pk, q);
-
-                    float dFk_q[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}; // dF dot q
-                    dot31(dFk, q, dFk_q);
-                    float A[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-                    for(int j=0; j<9; j++)
-                    {
-                        A[j] = Fk[j] + dFk_q[j];
-                    }
-                    float A_inv[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-                    bool success = inv3x3(A, A_inv);
-                    if (success == -1)
-                        break;
-
-                    float b[3] = {0.0, 0.0, 0.0};
-                    float Fk_q[3] = {0.0, 0.0, 0.0};
-                    mul31(Fk, q, Fk_q);
-                    float dFk_q_q[3] = {0.0, 0.0, 0.0}; // dF dot q dot q
-                    mul31(dFk_q, q, dFk_q_q);
-
-                    for(int i=0; i<3; i++)
-                    {
-                        b[i] = Fk_q[i] + 0.5 * dFk_q_q[i] - q_[i];
-                    }
-
-                    float dq[3] = {0.0, 0.0, 0.0};
-                    mul31(A_inv, b, dq);
-                    p[0] -= dq[0];
-                    p[1] -= dq[1];
-                    p[2] -= dq[2];
-
-                    if (dq[0]*dq[0] + dq[1]*dq[1] + dq[2]*dq[2] < 1e-12)
-                    {
-                        break;
-                    }
-
-                    num_itr++;
-                }//end while(num_itr < max_iter_num)
-
-                float p_pk[3] = {0.0, 0.0, 0.0};
-                minus(p, pk, p_pk);
-                if (fabs(p_pk[0]) > IP_dx || fabs(p_pk[1]) > IP_dx || fabs(p_pk[2]) > IP_dx)
-                {
-                    n_IP--;
-                }
-                ps[3 * k] = p[0];
-                ps[3 * k + 1] = p[1];
-                ps[3 * k + 2] = p[2];
-                itr_sum += num_itr;
-            }//end for(int k=0; k<n_IP; k++)
-
-            if (n_IP == 1)
-            {
-                bool check = !(ps[0]==0.0&&ps[1]==0.0&&ps[2]==0.0);
-                if (!check)
-                    printf("ps:%f,%f,%f,%f,%f,%f,%f,%f,%f\n",ps[0],ps[1],ps[2],ps[3],ps[4],ps[5],ps[6],ps[7],ps[8]);
-                x_map = ps[0];
-                y_map = ps[1];
-                z_map = ps[2];
-            }
-            else if (n_IP == 2)
-            {
-                bool check = !(ps[0]==0.0&&ps[1]==0.0&&ps[2]==0.0) && !(ps[3]==0.0&&ps[4]==0.0&&ps[5]==0.0);
-                if (!check)
-                    printf("ps:%f,%f,%f,%f,%f,%f,%f,%f,%f\n",ps[0],ps[1],ps[2],ps[3],ps[4],ps[5],ps[6],ps[7],ps[8]);
-                float dist[2] = {0.0, 0.0};
-                for(int k=0; k<2; k++)
-                {
-                    const float* pk = &p_ori[IPs[k] * 3];
-                    dist[k] = sqrt((pk[0]-x)*(pk[0]-x) + (pk[1]-y)*(pk[1]-y) + (pk[2]-z)*(pk[2]-z));
-                }
-                float dist_sum = dist[0] + dist[1];
-                float w0 = dist[1] / dist_sum;
-                float w1 = dist[0] / dist_sum;
-                x_map = w0 * ps[0] + w1 * ps[3];
-                y_map = w0 * ps[1] + w1 * ps[4];
-                z_map = w0 * ps[2] + w1 * ps[5];
-            }
-            else if (n_IP == 3)
-            {
-                bool check = !(ps[0]==0.0&&ps[1]==0.0&&ps[2]==0.0) && !(ps[3]==0.0&&ps[4]==0.0&&ps[5]==0.0) && !(ps[6]==0.0&&ps[7]==0.0&&ps[8]==0.0);
-                if (!check)
-                    printf("ps:%f,%f,%f,%f,%f,%f,%f,%f,%f\n",ps[0],ps[1],ps[2],ps[3],ps[4],ps[5],ps[6],ps[7],ps[8]);
-                float dist[3] = {0.0, 0.0, 0.0};
-                for(int k=0; k<3; k++)
-                {
-                    const float* pk = &p_ori[IPs[k] * 3];
-                    dist[k] = sqrt((pk[0]-x)*(pk[0]-x) + (pk[1]-y)*(pk[1]-y) + (pk[2]-z)*(pk[2]-z));
-                }
-                float dist_sum = dist[0] * dist[1] + dist[1] * dist[2] + dist[2] * dist[0];
-                float w0 = dist[1] * dist[2] / dist_sum;
-                float w1 = dist[0] * dist[2] / dist_sum;
-                float w2 = dist[0] * dist[1] / dist_sum;
-                x_map = w0 * ps[0] + w1 * ps[3] + w2 * ps[6];
-                y_map = w0 * ps[1] + w1 * ps[4] + w2 * ps[7];
-                z_map = w0 * ps[2] + w1 * ps[5] + w2 * ps[8];
-            }
-
-            x = x_map;
-            y = y_map;
-            z = z_map;
-
-        }//end if(found)
-
-        //end raybending--------------------------------------------------------------------------------
 
         const float dt = clamp(t * dt_gamma, dt_min, dt_max);
 
@@ -1421,6 +1442,7 @@ void march_rays_quadratic_bending(
     const at::Tensor bbmin, const at::Tensor bbmax,
     const float hgs, const at::Tensor resolution,
     const int num_seek_IP, const float IP_dx,
+    const bool cut, const at::Tensor cut_bounds,
 
     const uint32_t n_alive, const uint32_t n_step, const at::Tensor rays_alive,
     const at::Tensor rays_t, const at::Tensor rays_o, const at::Tensor rays_d,
@@ -1447,6 +1469,7 @@ void march_rays_quadratic_bending(
             bbmin.data_ptr<float>(), bbmax.data_ptr<float>(),
             hgs, resolution.data_ptr<int>(),
             num_seek_IP, IP_dx,
+            cut, cut_bounds.data_ptr<float>(),
 
             n_alive, n_step, rays_alive.data_ptr<int>(),
             rays_t.data_ptr<float>(), rays_o.data_ptr<float>(), rays_d.data_ptr<float>(),

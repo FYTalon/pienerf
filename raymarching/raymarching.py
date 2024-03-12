@@ -395,6 +395,7 @@ class _march_rays_quadratic_bending(Function):
                 max_iter_num,
                 bbmin, bbmax,
                 hgs, res, num_seek_IP, IP_dx,
+                cut, cut_bounds,
 
                 n_alive, n_step, rays_alive, rays_t, rays_o, rays_d,
                 bound, density_bitfield, C, H, near, far, align=-1,
@@ -429,6 +430,7 @@ class _march_rays_quadratic_bending(Function):
             max_iter_num, # 9
             bbmin, bbmax, # 10,11
             hgs, res, num_seek_IP, IP_dx, # 12,13,14,15
+            cut, cut_bounds,
 
             n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, bound, dt_gamma, max_steps, C, H,
             density_bitfield, near, far, xyzs, dirs, deltas, noises)

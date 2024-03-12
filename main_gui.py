@@ -1,3 +1,6 @@
+# --dataset_type synthetic --workspace model/chair --exp_name chair_0 -O --max_iter_num 1 --num_seek_IP 3 --sim_dx 0.05
+# --dataset_type llff --workspace model/trex --exp_name trex_0 -O --max_iter_num 1 --num_seek_IP 3 --sim_dx 0.05 --cut --cut_bounds -0.62 1.0 -0.82 0.42 -0.52 0.0
+
 from nerf.gui import NeRFSimGUI
 from nerf.trainer import *
 from get_opts import *

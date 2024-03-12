@@ -13,7 +13,6 @@ if __name__ == '__main__':
         os.mkdir("./model")
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('path', type=str)
     opt = get_shared_opts(parser)
     opt.workspace = "model/" + opt.path.split("/")[-1]
 
