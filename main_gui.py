@@ -20,15 +20,10 @@ def get_args(opt):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     opt = get_shared_opts(parser)
-    if opt.num_seek_IP > 3:
-        opt.num_seek_IP = 3
-    if opt.num_seek_IP < 1:
-        opt.num_seek_IP = 1
-    opt.current_folder = os.path.dirname(os.path.abspath(__file__))
 
     from nerf.network import NeRFNetwork
 
-    model = NeRFNetwork( # NeRFNetwork inherits NeRFRenderer
+    model = NeRFNetwork(
         encoding="hashgrid",
         bound=opt.bound,
         cuda_ray=opt.cuda_ray,

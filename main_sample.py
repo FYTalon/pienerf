@@ -22,15 +22,6 @@ def write_ply(filename, points, volumes, binary=True):
         with open(filename, 'wb') as f:
             PlyData([el], text=True).write(f)
 
-def read_ply(filename):
-    plydata = PlyData.read(filename)
-    vertex = plydata['vertex']
-    x = vertex['x']
-    y = vertex['y']
-    z = vertex['z']
-    points = np.column_stack((x, y, z))
-    return points
-
 def distance(p0, p1):
     d = torch.norm(p0 - p1, p=2)
     # print(f"distance({p0},{p1})={d}")

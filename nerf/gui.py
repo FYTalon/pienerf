@@ -125,12 +125,6 @@ class NeRFGUI:
         else:
             return np.expand_dims(outputs['depth'], -1).repeat(3, -1)
 
-    # added for single image rendering
-    def get_render_buffer(self, pose, intrinsics, W, H, bg_color=None, spp=1, downscale=1, render_def=False):
-        outputs = self.trainer.test_gui(pose, intrinsics, W, H, bg_color, spp, downscale, render_def=render_def)
-        render_buffer = self.prepare_buffer(outputs)
-        return render_buffer
-
     def test_step(self):
         # TODO: seems we have to move data from GPU --> CPU --> GPU?
 
@@ -443,7 +437,7 @@ class NeRFGUI:
 
 
 class NeRFSimGUI:
-    def __init__(self, opt, trainer, sim, train_loader=None, debug=False, show=True, pause_each_frame=False, output_ply=False):
+    def __init__(self, opt, trainer, sim=None, train_loader=None, debug=False, show=True, pause_each_frame=False, output_ply=False):
         self.opt = opt  # shared with the trainer's opt to support in-place modification of rendering parameters.
         self.W = opt.W
         self.H = opt.H
@@ -478,8 +472,9 @@ class NeRFSimGUI:
         self.rays_o = None
         self.rays_d = None
 
-        self.pts, _, _ = self.solver.get_IP_info()
-        self.pts = self.pts.cpu().numpy()
+        if self.solver is not None:
+            self.pts, _, _ = self.solver.get_IP_info()
+            self.pts = self.pts.cpu().numpy()
 
         self.render_IP = False
         self.log_FPS = False
@@ -529,6 +524,12 @@ class NeRFSimGUI:
         else:
             return np.expand_dims(outputs['depth'], -1).repeat(3, -1)
 
+    # added for single image rendering
+    def get_render_buffer(self, pose, intrinsics, W, H, bg_color=None, spp=1, downscale=1, render_def=False):
+        outputs = self.trainer.test_gui(pose, intrinsics, W, H, bg_color, spp, downscale, render_def=render_def)
+        render_buffer = self.prepare_buffer(outputs)
+        return render_buffer
+
     def overlay_point_buffer(self, points):
         for pos in points.cpu().numpy():
             screen_x, screen_y, _ = self.world_to_screen(pos)
@@ -553,8 +554,9 @@ class NeRFSimGUI:
             dpg.set_axis_limits("_fps_y_axis", min_value, max_value)
 
     def test_step(self):
-        self.pts, _, _ = self.solver.get_IP_info()
-        self.pts = self.pts.cpu().numpy()
+        if self.solver is not None:
+            self.pts, _, _ = self.solver.get_IP_info()
+            self.pts = self.pts.cpu().numpy()
 
         if self.sid is not None:
             x1, y1 = dpg.get_mouse_pos()
@@ -610,7 +612,7 @@ class NeRFSimGUI:
 
             if self.need_update:
                 self.render_buffer = self.prepare_buffer(outputs)
-                if self.render_IP:
+                if self.render_IP and self.solver is not None:
                     IP_pos, _, _ = self.solver.get_IP_info()
                     self.render_buffer = self.overlay_point_buffer(IP_pos)
                 self.spp = 1

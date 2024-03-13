@@ -114,5 +114,10 @@ def get_shared_opts(parser):
         # assert opt.patch_size > 16, "patch_size should > 16 to run LPIPS loss."
         assert opt.num_rays % (opt.patch_size ** 2) == 0, "patch_size ** 2 should be dividable by num_rays."
 
+    if opt.num_seek_IP > 3:
+        opt.num_seek_IP = 3
+    if opt.num_seek_IP < 1:
+        opt.num_seek_IP = 1
+
     return opt
 

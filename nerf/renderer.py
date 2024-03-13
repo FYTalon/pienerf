@@ -774,19 +774,19 @@ class NeRFRenderer(nn.Module):
         cut_bounds = kwargs.get('cut_bounds') # float[6]
         cut_bounds = torch.tensor(cut_bounds, dtype=dtype, device=device)
 
-        p_def = self.p_def.contiguous()
-        p_ori = self.p_ori.contiguous()
-        F_IP = self.IP_F.contiguous()
-        dF_IP = self.IP_dF.contiguous()
+        p_def = self.p_def.contiguous().cuda()
+        p_ori = self.p_ori.contiguous().cuda()
+        F_IP = self.IP_F.contiguous().cuda()
+        dF_IP = self.IP_dF.contiguous().cuda()
 
         bmin = p_def.min(axis=0).values
         bmax = p_def.max(axis=0).values
         if cut:
-            bmin = -bound * torch.ones(3, dtype=dtype)
-            bmax = bound * torch.ones(3, dtype=dtype)
+            bmin = -bound * torch.ones(3, dtype=dtype).cuda()
+            bmax = bound * torch.ones(3, dtype=dtype).cuda()
         marg = 1e-3
-        bbmin = bmin - marg * torch.ones(3, dtype=dtype)
-        bbmax = bmax + marg * torch.ones(3, dtype=dtype)
+        bbmin = bmin - marg * torch.ones(3, dtype=dtype).cuda()
+        bbmax = bmax + marg * torch.ones(3, dtype=dtype).cuda()
         # hgs = (bbmax - bbmin) / float(res) # wrong, sh grid should be cube, not cuboid
         resolution = torch.ceil((bbmax - bbmin) / hgs).to(torch.int32)
 
