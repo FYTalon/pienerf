@@ -167,6 +167,11 @@ Key command line parameters include:
     - `num_seek_IP`: For quadratic ray bending. The number of IPs to seek for each query point. Valid values are 1, 2, 3. The rest position will be weighted sum of rest positions calculated by these IPs.
     - `sim_dx`: spatial hashing grid size.
     - `max_steps`, `T_thresh`: NeRF rendering settings. 
+    
+## TODO
+- Add more pretrained models.
+- Add collision
+- Add point cloud edit GUI.
 
 ## Citation
 
