@@ -134,7 +134,7 @@ Also pass in `--cut --cut_bounds` if you use these bounds in sampling, e.g.
 python main_gui.py --path D:/Data/nerf_llff_data/trex --workspace model/trex --exp_name trex_0 -O --max_iter_num 1 --num_seek_IP 1 --sim_dx 0.05 --cut --cut_bounds -0.62 1.0 -0.82 0.42 -0.52 0.28 --max_steps 300 --T_thresh 5e-2 --W 1008 --H 756
 ```
 
-Note that `--path` argument is only used for loading poses from dataset.
+Note: `--path` argument here is used for loading poses from dataset. Tip: you can use the slider to quickly load existing poses in the dataset.
 
 In this case, objects inside cut bounds are simulated and rendered using ray bending, while the rest is rendered as a static background.
 
