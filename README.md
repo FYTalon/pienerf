@@ -77,15 +77,9 @@ e.g. for nerf synthetic data,
 python main_train.py --dataset_type synthetic --path D:/Data/nerf_synthetic/lego --iters 30000 --W 800 --H 800 -O
 ```
 
-and for other datasets,
+For training other datasets, or creating your own dataset, as well as an explanation of arguments used here (such as `-O`), please refer to [torch-ngp](https://github.com/ashawkey/torch-ngp).
 
-```
-python main_train.py --path D:/Data/nerf_llff_data/trex -O
-```
-
-For explanation of arguments used here (such as `-O`), please refer to [torch-ngp](https://github.com/ashawkey/torch-ngp).
-
-Trained results including checkpoints are stored in the folder `model/`.
+Trained results including checkpoints will be stored in the folder `model/`.
 
 ### Sample (skippable)
 
