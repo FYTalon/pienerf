@@ -88,7 +88,7 @@ To simulate a reconstructed NeRF scene, you can use one of our provided point cl
 Or if you want to get a customized point cloud, you can run 
 
 ```
-python sampling/point_sampling.py --dataset_type synthetic --workspace model/chair --exp_name chair_0  --sub_coeff 0.25 --sub_res 40
+python main_sample.py --dataset_type synthetic --workspace model/chair --exp_name chair_0  --sub_coeff 0.25 --sub_res 40
 ```
 
 where the path `model/chair` should contain a file like `checkpoints/ngp*.pth`, and `sub_coeff` and `sub_res` controls the density of point cloud (see Section **Parameters** for details).
@@ -112,7 +112,7 @@ Note: for real-world dataset, you need to first determine the bounding box of th
 e.g. for `nerf_llff_data/trex`, you can run
 
 ```
-python sampling/point_sampling.py --workspace model/trex --exp_name trex_0 --sub_coeff 0.75 --sub_res 180 --density_threshold 0.04 --cut --cut_bounds -0.62 1.0 -0.82 0.42 -0.52 0.28
+python main_sample.py --workspace model/trex --exp_name trex_0 --sub_coeff 0.75 --sub_res 180 --density_threshold 0.04 --cut --cut_bounds -0.62 1.0 -0.82 0.42 -0.52 0.28
 ```
 
 ### Simulate and Render
