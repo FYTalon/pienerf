@@ -132,7 +132,7 @@ It can be slow for the first-time run, because Warp CUDA kernel compiling takes 
 
 Press space to start simulation (or press again to pause). Left click on the object while ctrl is pressed to add force. Press key Q or right click to stop force. Scroll your mouse while force is in effect to change the force scale.
 
-![](\assets\gui.png)
+![](.\assets\gui.png)
 
 Also pass in `--cut --cut_bounds` if you use these bounds in sampling, e.g.
 
@@ -142,7 +142,7 @@ python main_gui.py --path D:/Data/nerf_llff_data/trex --workspace model/trex --e
 
 In this case, objects inside cut bounds are simulated and rendered using ray bending, while the rest is rendered as a static background.
 
-![](\assets\trex.gif)
+![](.\assets\trex.gif)
 
 ### Parameters
 Key command line parameters include:
