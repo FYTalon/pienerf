@@ -1,4 +1,6 @@
 from .utils import *
+import os
+pienerf_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 class Trainer(object):
     def __init__(self,
@@ -308,7 +310,7 @@ class Trainer(object):
 
             self.frame += 1
             if output_ply:
-                solver.OutputToPly(f"./outputs_gui/{frame}.ply")
+                solver.OutputToPly(pienerf_dir + f"/outputs_gui/{frame}.ply")
 
         # torch.set_default_dtype(torch.float32)
         if render_def:

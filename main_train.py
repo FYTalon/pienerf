@@ -3,18 +3,20 @@ from get_opts import *
 from nerf.provider import NeRFDataset
 from nerf.gui import NeRFGUI
 from nerf.trainer import *
+import os
+pienerf_dir = os.path.dirname(os.path.abspath(__file__))
 
 #torch.autograd.set_detect_anomaly(True)
 
 os.environ['KMP_DUPLICATE_LIB_OK'] = '1'
 
 if __name__ == '__main__':
-    if not os.path.exists("./model"):
-        os.mkdir("./model")
+    if not os.path.exists(pienerf_dir + "/model"):
+        os.mkdir(pienerf_dir + "/model")
 
     parser = argparse.ArgumentParser()
     opt = get_shared_opts(parser)
-    opt.workspace = "model/" + opt.path.split("/")[-1]
+    opt.workspace = pienerf_dir + "/model/" + opt.path.split("/")[-1]
 
     if opt.ff:
         opt.fp16 = True

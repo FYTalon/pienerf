@@ -120,7 +120,7 @@ class Simulator:
                       np.asarray(plydata.elements[0]["y"]),
                       np.asarray(plydata.elements[0]["z"])), axis=1).astype(npfloat)
         ).cuda()
-
+        assert self.pos.shape[0] > 0
         self.mass = torch.from_numpy(
             np.asarray(plydata.elements[0]["mass"]).astype(npfloat)
         ).cuda()
@@ -451,7 +451,7 @@ class Simulator:
 
 
     def build_global(self):
-        dimension = self.kernel_mask.sum() * 10
+        dimension = int(self.kernel_mask.sum() * 10)
         mat = torch.zeros((dimension, dimension), dtype=torchfloat)
         wp_mat = wp.from_torch(mat)
 
@@ -475,9 +475,11 @@ class Simulator:
         vid = torch.arange(0, self.pos.size(0), 1, dtype=torch.int32)
         vid = vid[self.is_pin]
 
+        assert self.pts_kernel.min() >= 0 and self.pts_kernel.max() < self.kernel_mask.sum()
+
         wp.launch(
             kernel=cuda_utils.build_pin_global,
-            dim=(self.is_pin.sum() * 6400,),
+            dim=(self.is_pin.sum() * 64,),
             inputs=[
                 wpfloat(self.stiff),
                 wp.from_torch(vid),
@@ -494,13 +496,11 @@ class Simulator:
         global_matrix[2::3, 2::3] = mat
 
         self.global_matrix = torch.zeros_like(global_matrix)
-
         lst = []
         for i in range(self.kernel_pos.size(0)):
             if global_matrix[i * 30, i * 30] > 0.0:
                 for j in range(30):
                     lst.append(i * 30 + j)
-
         lst = torch.tensor(lst, dtype=torch.int32)
         mat = global_matrix[lst][:, lst]
         idx = torch.arange(0, mat.size(0), 1, dtype=torch.int32)
@@ -577,14 +577,15 @@ class Simulator:
 
     def update_force(self, vid, f):
         f = f.to(dtype=torchfloat).cuda()
-        self.dof_f = torch.zeros((self.dof.size(0) // 3, 3), dtype=torchfloat)
+        dof_f = torch.zeros((self.dof.size(0) // 3, 3), dtype=torchfloat).cuda()
         m = self.IP_rho[vid] * (self.dx ** 3)
         for i in range(8):
             kid = self.IP_kernel[vid, i]
             for j in range(10):
-                self.dof_f[kid * 10 + j] += m * self.IP_Nx[vid, i][j] * f
+                dof_f[kid * 10 + j] += m * self.IP_Nx[vid, i][j] * f
 
-        self.dof_f = self.dof_f.reshape(-1)
+        dof_f = dof_f.reshape(-1)
+        self.dof_f = dof_f
 
 
     def stepforward(self):

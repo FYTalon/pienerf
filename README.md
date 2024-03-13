@@ -40,26 +40,49 @@ SET DISTUTILS_USE_SDK=1
 # run the following line in each folder: raymarching, shencoder, gridencoder 
 python setup.py build_ext --inplace && pip install .
 ```
-## Quick Start
+## Run
+**If you want skip training and sampling**, we provide several pretrained NeRF models and sampled point cloud files (with configs encoded) [here](https://drive.google.com/drive/folders/1gF56IjQpdXauV9gP8vbouRTnuwxR7mxa) for you to download. The directory should look like this
+
+```
+pienerf
+- model
+	- chair
+		- checkpoints
+			ngp_ep0300.pth
+	- trex
+		- checkpoints
+			ngp_ep0625.pth
+- assets
+	chair_0.ply
+	trex_0.ply
+...
+main_gui.py
+...
+```
+
+With these, you can directly go to section **Simulate and Render** below.
+
 ### Train (skippable)
 
-We provide several pretrained NeRF models and sampled point cloud files (with configs encoded) [here](https://drive.google.com/drive/folders/1gF56IjQpdXauV9gP8vbouRTnuwxR7mxa).
+You need to change argument `--path` to the actual path your dataset lies in.
 
-If you want to train your own NeRF model, you can run (**you need to change the first argument to the actual path your dataset lies in**, datasets can be downloaded [here](https://drive.google.com/drive/folders/128yBriW1IG_3NJ5Rp7APSTZsJqdJdfc1))
+NeRF datasets can be downloaded [here](https://drive.google.com/drive/folders/128yBriW1IG_3NJ5Rp7APSTZsJqdJdfc1).
+
+If you want to train your own NeRF model, you can run
 
 e.g. for nerf synthetic data,
 
 ```
-python main_train.py D:/Data/nerf_synthetic/lego --iters 30000 --scale 0.8 --bound 1.0 --dt_gamma 0.0 --W 800 --H 800 -O
+python main_train.py --dataset_type synthetic --path D:/Data/nerf_synthetic/lego --iters 30000 --W 800 --H 800 -O
 ```
 
-and for other dataset,
+and for other datasets,
 
 ```
-python main_nerf.py D:/Data/nerf_llff_data/trex -O
+python main_nerf.py --path D:/Data/nerf_llff_data/trex -O
 ```
 
-For explanation of arguments used here, please refer to [torch-ngp](https://github.com/ashawkey/torch-ngp).
+For explanation of arguments used here (such as `-O`), please refer to [torch-ngp](https://github.com/ashawkey/torch-ngp).
 
 Trained results including checkpoints are stored in the folder `model/`.
 
@@ -94,29 +117,31 @@ Note: for real-world dataset, you need to first determine the bounding box of th
 e.g. for `nerf_llff_data/trex`, you can run
 
 ```
-python point_sampling.py --workspace ../model/trex --exp_name trex_0 --sub_coeff 0.65 --sub_res 120 --density_threshold 0.04 --cut --cut_bounds -0.62 1.0 -0.82 0.42 -0.52 0.0
+python sampling/point_sampling.py --workspace model/trex --exp_name trex_0 --sub_coeff 0.75 --sub_res 180 --density_threshold 0.04 --cut --cut_bounds -0.62 1.0 -0.82 0.42 -0.52 0.28
 ```
-
-
 
 ### Simulate and Render
 
 Saving edited `chair_0.ply` into folder `model/chair`, and run
 
-```shell
-python main.gui.py --dataset_type synthetic --workspace model/chair --exp_name chair_0 -O --max_iter_num 1 --num_seek_IP 3 --sim_dx 0.05
 ```
-Press space to start simulation (or press again to pause). Left click on the object while ctrl is pressed to add force. Press key Q or right click to stop force.
+python main_gui.py --path D:/Data/nerf_synthetic/chair --dataset_type synthetic --workspace model/chair --exp_name chair_0 -O --max_iter_num 1 --num_seek_IP 3 --sim_dx 0.05
+```
+It can be slow for the first-time run, because Warp CUDA kernel compiling takes some time (5 to 10 minutes). After first compiling, it should be faster (a few seconds).
+
+Press space to start simulation (or press again to pause). Left click on the object while ctrl is pressed to add force. Press key Q or right click to stop force. Scroll your mouse while force is in effect to change the force scale.
 
 ![](\assets\gui.png)
 
 Also pass in `--cut_bounds` if you use these bounds in sampling, e.g.
 
 ```
-python main.gui.py --workspace model/trex --exp_name trex_0 -O --max_iter_num 1 --num_seek_IP 3 --sim_dx 0.05 --cut --cut_bounds -0.62 1.0 -0.82 0.42 -0.52 0.0
+python main_gui.py --path D:/Data/nerf_llff_data/trex --dataset_type llff --workspace model/trex --exp_name trex_0 -O --max_iter_num 1 --num_seek_IP 1 --sim_dx 0.05 --cut --cut_bounds -0.62 1.0 -0.82 0.42 -0.52 0.28 --max_steps 300 --T_thresh 5e-2 --W 1008 --H 756
 ```
 
 In this case, objects inside cut bounds are simulated and rendered using ray bending, while the rest is rendered as a static background.
+
+![](\assets\trex.gif)
 
 ### Parameters
 Key command line parameters include:
@@ -126,10 +151,10 @@ Key command line parameters include:
     - `sub_res`: The bigger, the more grid points sampled.
     - `density_threshold`: If NeRF's density is larger than this this, it is considered occupied.
 - Simulation Parameters:
-    - `sim_dt`: 
-    - `sim_dx`:
-    - `sim_iters`:
-    - `sim_stiff`
+    - `sim_dt`: time step
+    - `sim_dx`: control the density of IPs
+    - `sim_iters`: number of local-global steps
+    - `sim_stiff`: strength of boundary condition
 - Rendering Parameters:
     - `max_iter_num`: For quadratic ray bending. The maximum number of of Newton iterations when solving for the rest shape position. More iterations give (possibly) better rendering quality and slower rendering speed.
     - `num_seek_IP`: For quadratic ray bending. The number of IPs to seek for each query point. At most 3 (i.e., valid values are 1, 2, 3). The rest position will be weighted sum of rest positions calculated by these IPs.

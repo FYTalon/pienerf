@@ -1,4 +1,5 @@
 import os
+pienerf_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 import warp as wp
 import time
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
@@ -16,8 +17,8 @@ import torch
 
 def main():
 
-    if not os.path.exists("../outputs"):
-        os.mkdir("../outputs")
+    if not os.path.exists(pienerf_dir + "/outputs"):
+        os.mkdir(pienerf_dir + "/outputs")
 
     sim = Simulator(
         dt=1e-2,
@@ -28,12 +29,12 @@ def main():
         base=torch.tensor([-1, -1, -1], dtype=torchfloat)
     )
 
-    sim.InitializeFromPly("../assets/chair.ply")
-    sim.OutputToPly("../outputs/0.ply")
+    sim.InitializeFromPly(pienerf_dir + "/assets/chair.ply")
+    sim.OutputToPly(pienerf_dir + "/outputs/0.ply")
 
-    if not os.path.exists("../debug"):
-        os.mkdir("../debug")
-    write_ply("../debug/ip_0.ply", sim.IP_pos.cpu().numpy())
+    if not os.path.exists(pienerf_dir + "/debug"):
+        os.mkdir(pienerf_dir + "/debug")
+    write_ply(pienerf_dir + "/debug/ip_0.ply", sim.IP_pos.cpu().numpy())
 
     cost = time.time()
 
@@ -41,9 +42,9 @@ def main():
         for i in range(1, 1001):
             print(i)
             sim.stepforward()
-            sim.OutputToPly(f"../outputs/{i}.ply")
+            sim.OutputToPly(pienerf_dir + f"/outputs/{i}.ply")
             pos, _, _ = sim.get_IP_info()
-            write_ply(f"../debug/ip_{i}.ply", pos.cpu().numpy())
+            write_ply(pienerf_dir + f"/debug/ip_{i}.ply", pos.cpu().numpy())
     print(time.time() - cost)
 
 if __name__ == "__main__":

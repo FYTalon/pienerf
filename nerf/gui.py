@@ -7,26 +7,6 @@ import json
 from .utils import *
 from .provider import nerf_matrix_to_ngp
 
-def get_pose(file_dir, frame_str):
-    try:
-        file_path = file_dir + "/transforms_train.json"
-        with open(file_path) as file:
-            data = json.load(file)
-    except FileNotFoundError:
-        try:
-            file_path = file_dir + "/transforms.json"
-            with open(file_path) as file:
-                data = json.load(file)
-        except FileNotFoundError:
-            print("no transforms found in ", file_dir, "!!!")
-            return None
-    for frame in data["frames"]:
-        if frame_str in frame["file_path"]:
-            print("reading pose from ", file_path, frame_str, "...")
-            return np.array(frame["transform_matrix"], dtype=np.float32)
-    print("no pose named", frame_str, "in ", file_path)
-    return None
-
 def clamp(value, min_value, max_value):
     return max(min_value, min(value, max_value-1))
 
@@ -514,6 +494,10 @@ class NeRFSimGUI:
         self.fps_values = []
         self.max_frames_to_capture = 30
 
+        self.force_scale = 1.0
+
+        self.poses_in_dataset = self.get_poses(self.opt.path)
+
         if self.show:
             dpg.create_context()
             self.register_dpg()
@@ -522,6 +506,27 @@ class NeRFSimGUI:
     def __del__(self):
         if self.show:
             dpg.destroy_context()
+
+    def get_poses(self, file_dir):
+        try:
+            file_path = file_dir + "/transforms_train.json"
+            with open(file_path) as file:
+                data = json.load(file)
+        except FileNotFoundError:
+            try:
+                file_path = file_dir + "/transforms.json"
+                with open(file_path) as file:
+                    data = json.load(file)
+            except FileNotFoundError:
+                print("no transforms found in ", file_dir, "!!!")
+                return None
+        frames = data["frames"]
+        poses = []
+        for frame in frames:
+            pose = np.array(frame["transform_matrix"], dtype=np.float32)
+            pose = nerf_matrix_to_ngp(pose, scale=self.opt.scale, offset=self.opt.offset)
+            poses.append(pose)
+        return poses
 
     def reset_camera(self): # TODO
         self.cam = OrbitCamera(self.W, self.H, r=self.opt.radius, fovy=self.opt.fovy)
@@ -571,12 +576,13 @@ class NeRFSimGUI:
             dpg.draw_line((x0, y0), (x1, y1), color=[0, 0, 0, 100], thickness=5, parent="_primary_window", tag="l1")
             p1, _ = self.screen_to_world(x1, y1)
             p0 = self.pts[self.sid]
-            mouse_force_3d = 1e5 * (p1 - p0)
+            mouse_force_3d = self.force_scale * 1e5 * (p1 - p0)
             # print(f"force: {np.linalg.norm(mouse_force_3d)}")
             force_norm = np.linalg.norm(mouse_force_3d)
             if force_norm > 5e5:
                 mouse_force_3d *= 5e5 / force_norm
-            self.solver.update_force(self.sid, torch.tensor([mouse_force_3d[0], mouse_force_3d[1], mouse_force_3d[2]]))
+            if mouse_force_3d.shape[0] == 3:
+                self.solver.update_force(self.sid, torch.tensor([mouse_force_3d[0], mouse_force_3d[1], mouse_force_3d[2]]))
 
         if not self.paused:
             self.need_update = True
@@ -627,10 +633,12 @@ class NeRFSimGUI:
             # print(type(self.depth))
             # print("depth: ", np.nanmin(self.depth), "~", np.nanmax(self.depth))
 
-            dpg.set_value("_log_infer_time", f'{t:.4f}ms ({int(1000 / t)} FPS)')
+            # dpg.set_value("_log_infer_time", f'{t:.4f}ms ({int(1000 / t)} FPS)')
+            dpg.set_value("_log_infer_time", f'{int(1000 / t)}')
             dpg.set_value("_log_resolution", f'{int(self.downscale * self.W)}x{int(self.downscale * self.H)}')
             # dpg.set_value("_log_spp", self.spp)
             dpg.set_value("_log_frame", self.frame)
+            dpg.set_value("_force_scale", f"{self.force_scale:.3f}")
             dpg.set_value("_texture", self.render_buffer)
 
         if not self.paused:
@@ -678,7 +686,7 @@ class NeRFSimGUI:
         dpg.set_primary_window("_primary_window", True)
 
         # control window
-        with dpg.window(label="Control", tag="_control_window", width=400, height=20):
+        with dpg.window(label="Control", tag="_control_window", width=400, height=120):
 
             # button theme
             with dpg.theme() as theme_button:
@@ -693,35 +701,36 @@ class NeRFSimGUI:
                 dpg.add_text("frame: ")
                 dpg.add_text("0", tag="_log_frame")
 
-            with dpg.group(horizontal=True):
-                dpg.add_text("Infer time: ")
+            # with dpg.group(horizontal=True):
+                dpg.add_text("FPS: ")
                 dpg.add_text("no data", tag="_log_infer_time")
 
-            def callback_load_pose(sender, app_data, user_data):
-                pose_id = dpg.get_value(sender)
-                pose = get_pose(self.opt.path, pose_id)
-                if pose is not None:
-                    pose = nerf_matrix_to_ngp(pose, scale=self.opt.scale, offset=self.opt.offset)
+            if self.opt.dataset_type != "synthetic":
+                def callback_load_pose(sender, app_data, user_data):
+                    pose_id = dpg.get_value(sender)
+                    pose = self.poses_in_dataset[pose_id]
                     self.cam.pose_to_params(pose)
                     self.need_update = True
 
+                with dpg.group(horizontal=True):
+                    dpg.add_text('poses from dataset: ')
+                    dpg.add_slider_int(width=100, min_value=0, max_value=len(self.poses_in_dataset)-1, callback=callback_load_pose)
+
             with dpg.group(horizontal=True):
-                dpg.add_input_text(label="<- input pose ID & enter", default_value="330",
-                               on_enter=True, callback=callback_load_pose, width=100)
-                dpg.add_button(label="?", width=20, tag='pose_hint_button')
-            with dpg.tooltip('pose_hint_button'):
-                dpg.add_text('Pose ID is a substring of "file_path" attribute in transforms(_train).json, e.g., 400 for dataset trex')
+                dpg.add_text("force scale: ")
+                dpg.add_text("1.0", tag="_force_scale")
 
-            def callback_render_IP(sender, app_data):
-                self.render_IP = not self.render_IP
-                self.need_update = True
-            dpg.add_checkbox(label="render IPs", default_value=False, callback=callback_render_IP)
+            # with dpg.group(horizontal=True):
+                def callback_render_IP(sender, app_data):
+                    self.render_IP = not self.render_IP
+                    self.need_update = True
+                dpg.add_checkbox(label="render IPs", default_value=False, callback=callback_render_IP)
 
-            # FPS logging chart
-            def callback_log_FPS(sender, app_data):
-                self.log_FPS = not self.log_FPS
-                dpg.configure_item("fps_over_time_plot", show=self.log_FPS)
-            dpg.add_checkbox(label="log FPS", default_value=False, callback=callback_log_FPS)
+                # FPS logging chart
+                def callback_log_FPS(sender, app_data):
+                    self.log_FPS = not self.log_FPS
+                    dpg.configure_item("fps_over_time_plot", show=self.log_FPS)
+                dpg.add_checkbox(label="log FPS", default_value=False, callback=callback_log_FPS)
 
             with dpg.plot(label="FPS Over Time", show=False, height=160, width=-1, no_title=True, no_mouse_pos=True, tag="fps_over_time_plot"):
                 dpg.add_plot_axis(dpg.mvXAxis, label="Frame", tag="_fps_x_axis")
@@ -812,6 +821,8 @@ class NeRFSimGUI:
             if dpg.is_key_pressed(32): # space
                 self.paused = not self.paused
             if dpg.is_key_pressed(81): # Q
+                if self.sid is not None:
+                    self.solver.update_force(self.sid, torch.tensor([0.0, 0.0, 0.0]))
                 self.sid = None
                 dpg.delete_item("c0")
                 dpg.delete_item("c1")
@@ -836,7 +847,8 @@ class NeRFSimGUI:
                 # print(f"mouse clicked at ({x},{y}), depth={d}, pos={pos}, closest={self.pts[self.sid]}, distance={len(pos-self.pts[self.sid])}")
 
             if dpg.is_mouse_button_down(dpg.mvMouseButton_Right):
-            # if dpg.is_mouse_button_pressed(dpg.mvMouseButton_Right):
+                if self.sid is not None:
+                    self.solver.update_force(self.sid, torch.tensor([0.0, 0.0, 0.0]))
                 self.sid = None
                 dpg.delete_item("c0")
                 dpg.delete_item("c1")
@@ -849,12 +861,22 @@ class NeRFSimGUI:
         def callback_mouse_release(sender, app_data):
             pass
 
+        def callback_mouse_wheel(sender, app_data):
+            if self.sid is not None:
+                wheel_movement = app_data
+                if self.force_scale > 1.0:
+                    self.force_scale += wheel_movement * 0.5
+                else:
+                    self.force_scale += wheel_movement * 0.1
+                self.force_scale = max(1e-3, min(self.force_scale, 5e1))
+
         with dpg.handler_registry():
             dpg.add_key_press_handler(callback=callback_key_press)
             dpg.add_key_release_handler(callback=callback_key_release)
             dpg.add_mouse_click_handler(callback=callback_mouse_click)
             dpg.add_mouse_move_handler(callback=callback_mouse_move)
             dpg.add_mouse_release_handler(callback=callback_mouse_release)
+            dpg.add_mouse_wheel_handler(callback=callback_mouse_wheel)
 
         ### register camera handler
         def callback_camera_drag_rotate(sender, app_data):

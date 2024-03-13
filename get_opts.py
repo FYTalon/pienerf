@@ -1,7 +1,7 @@
 import argparse
 
 def get_shared_opts(parser):
-    parser.add_argument('path', type=str)
+    parser.add_argument('--path', type=str)
 
     parser.add_argument('-O', action='store_true', help="equals --fp16 --cuda_ray --preload")
     parser.add_argument('--test', action='store_true', help="test mode")

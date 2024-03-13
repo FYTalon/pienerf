@@ -1,6 +1,8 @@
 # --dataset_type synthetic --workspace model/chair --exp_name chair_0 -O --max_iter_num 1 --num_seek_IP 3 --sim_dx 0.05
 # --dataset_type llff --workspace model/trex --exp_name trex_0 -O --max_iter_num 1 --num_seek_IP 3 --sim_dx 0.05 --cut --cut_bounds -0.62 1.0 -0.82 0.42 -0.52 0.0
 
+import os
+pienerf_dir = os.path.dirname(os.path.abspath(__file__))
 from nerf.gui import NeRFSimGUI
 from nerf.trainer import *
 from get_opts import *
@@ -55,7 +57,7 @@ if __name__ == '__main__':
         base=torch.tensor([-opt.bound, -opt.bound, -opt.bound])
     )
 
-    sim.InitializeFromPly("./assets/" + opt.exp_name + ".ply")
+    sim.InitializeFromPly(pienerf_dir + "/assets/" + opt.exp_name + ".ply")
 
     IP_pos, IP_F, IP_dF = sim.get_IP_info()
     print("dof=", IP_pos.shape[0])
@@ -67,9 +69,9 @@ if __name__ == '__main__':
 
     output_ply = opt.output_ply
     if output_ply:
-        if not os.path.exists("./outputs_gui/"):
-            os.mkdir("./outputs_gui/")
-        sim.OutputToPly(f"./outputs_gui/0.ply")
+        if not os.path.exists(pienerf_dir + "/outputs_gui/"):
+            os.mkdir(pienerf_dir + "/outputs_gui/")
+        sim.OutputToPly(pienerf_dir + "/outputs_gui/0.ply")
 
     with torch.no_grad():
         gui = NeRFSimGUI(opt, trainer, sim, pause_each_frame=False, output_ply=output_ply)

@@ -64,16 +64,21 @@ def build_pin_global(
         mat: wp.array(shape=(0, 0), dtype=wpfloat)
 ):
     idx = wp.tid()
-    vid = idx // 6400
+    vid = idx // 64
     vvid = vidx[vid]
-    i = idx % 6400 // 800
-    x = idx % 800 // 80
-    j = idx % 80 // 10
-    y = idx % 10
-    r = topo[vvid, i] * 10 + x
-    c = topo[vvid, j] * 10 + y
+    i = idx % 64 // 8
+    j = idx % 8
 
-    wp.atomic_add(mat, r, c, stiff * Nx[vvid, i][x] * Nx[vvid, j][y])
+    kidi = topo[vvid, i]
+    kidj = topo[vvid, j]
+    iNx = Nx[vvid, i]
+    jNx = Nx[vvid, j]
+
+    for x in range(10):
+        for y in range(10):
+            r = kidi * 10 + x
+            c = kidj * 10 + y
+            wp.atomic_add(mat, r, c, stiff * iNx[x] * jNx[y])
 
 @wp.kernel
 def calc_elastic(
