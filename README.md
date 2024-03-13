@@ -1,6 +1,6 @@
 # PIE-NeRF🍕: Physics-based Interactive Elastodynamics with NeRF
 
-### [[Project Page](https://fytalon.github.io/pienerf/)] [[arXiv](https://arxiv.org/abs/2311.13099)] [[Video](https://www.youtube.com/watch?v=V96GfcMUH2Q)]
+### [[Project Page](https://fytalon.github.io/pienerf/)] [[arXiv](https://arxiv.org/abs/2311.13099)] [[Video](https://fytalon.github.io/pienerf/static/video/c_video.mp4)]
 
 Yutao Feng<sup>1,2</sup>\*, Yintong Shang<sup>1</sup>\*, Xuan Li<sup>3</sup>, Tianjia Shao<sup>2</sup>, Chenfanfu Jiang<sup>3</sup>, Yin Yang<sup>1</sup> <br>
 <sup>1</sup>University of Utah, <sup>2</sup>Zhejiang University, <sup>3</sup>University of California, Los Angeles <br>
