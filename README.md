@@ -88,7 +88,7 @@ To simulate a reconstructed NeRF scene, you can use one of our provided point cl
 Or if you want to get a customized point cloud, you can run 
 
 ```
-python main_sample.py --dataset_type synthetic --workspace model/chair --exp_name chair_0  --sub_coeff 0.25 --sub_res 40
+python main_sample.py --dataset_type synthetic --workspace model/chair --exp_name chair_0  --sub_coeff 0.55 --sub_res 60
 ```
 
 where the path `model/chair` should contain a file like `checkpoints/ngp*.pth`, and `sub_coeff` and `sub_res` controls the density of point cloud (see Section **Parameters** for details).
