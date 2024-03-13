@@ -10,12 +10,12 @@ Abstract: *We show that physics-based simulations can be seamlessly integrated w
 
 ## News
 
-- [2024-03-10] Code Release.
+- [2024-03-12] Code Release.
 - [2024-02-27] Our paper has been accpetd by CVPR 2024!
 
 ## Setup
 
-The following setup is tested on Windows 11, with RTX 3060 and RTX 4080.
+The following setup is tested on Windows 11, with RTX 3060 and CUDA toolkit 11.8.
 
 Our code is developed based on [torch-ngp](https://github.com/ashawkey/torch-ngp), a pytorch implementation of Instant-NGP.
 
@@ -40,7 +40,10 @@ SET DISTUTILS_USE_SDK=1
 # run the following line in each folder: raymarching, shencoder, gridencoder 
 python setup.py build_ext --inplace && pip install .
 ```
+For environment building issues, please check [torch-ngp](https://github.com/ashawkey/torch-ngp)'s issues first. 
+
 ## Run
+
 **If you want skip training and sampling**, we provide several pretrained NeRF models and sampled point cloud files (with configs encoded) [here](https://drive.google.com/drive/folders/1gF56IjQpdXauV9gP8vbouRTnuwxR7mxa) for you to download. The directory should look like this
 
 ```
@@ -64,9 +67,7 @@ With these, you can directly go to section **Simulate and Render** below.
 
 ### Train (skippable)
 
-You need to change argument `--path` to the actual path your dataset lies in.
-
-NeRF datasets can be downloaded [here](https://drive.google.com/drive/folders/128yBriW1IG_3NJ5Rp7APSTZsJqdJdfc1).
+You need to change argument `--path` to the actual path your dataset lies in. NeRF datasets can be downloaded [here](https://drive.google.com/drive/folders/128yBriW1IG_3NJ5Rp7APSTZsJqdJdfc1).
 
 If you want to train your own NeRF model, you can run
 
@@ -79,7 +80,7 @@ python main_train.py --dataset_type synthetic --path D:/Data/nerf_synthetic/lego
 and for other datasets,
 
 ```
-python main_nerf.py --path D:/Data/nerf_llff_data/trex -O
+python main_train.py --path D:/Data/nerf_llff_data/trex -O
 ```
 
 For explanation of arguments used here (such as `-O`), please refer to [torch-ngp](https://github.com/ashawkey/torch-ngp).
@@ -93,7 +94,7 @@ To simulate a reconstructed NeRF scene, you can use one of our provided point cl
 Or if you want to get a customized point cloud, you can run 
 
 ```
-python point_sampling.py --dataset_type synthetic --workspace ../model/chair --exp_name chair_0  --sub_coeff 0.25 --sub_res 40
+python sampling/point_sampling.py --dataset_type synthetic --workspace model/chair --exp_name chair_0  --sub_coeff 0.25 --sub_res 40
 ```
 
 where the path `model/chair` should contain a file like `checkpoints/ngp*.pth`, and `sub_coeff` and `sub_res` controls the density of point cloud (see Section **Parameters** for details).
@@ -109,7 +110,7 @@ Explanation of point attributes:
 The following attributes need to be specified by your self:
 
 - `pin`: int, 1 or 0, where 1 means pinned. 
-- `lam` & `mu`: float, material parameters, typically 1e6
+- `lam` & `mu`: float, material parameters, typically 1e6.
 - `mass`: float, mass of each vertex, typically 1e3*`vp`.
 
 Note: for real-world dataset, you need to first determine the bounding box of the object you want to simulate, and then set it by `--cut --cut_bounds `, where `--cut_bounds` are a list of floats ( x_min 
@@ -133,10 +134,10 @@ Press space to start simulation (or press again to pause). Left click on the obj
 
 ![](\assets\gui.png)
 
-Also pass in `--cut_bounds` if you use these bounds in sampling, e.g.
+Also pass in `--cut --cut_bounds` if you use these bounds in sampling, e.g.
 
 ```
-python main_gui.py --path D:/Data/nerf_llff_data/trex --dataset_type llff --workspace model/trex --exp_name trex_0 -O --max_iter_num 1 --num_seek_IP 1 --sim_dx 0.05 --cut --cut_bounds -0.62 1.0 -0.82 0.42 -0.52 0.28 --max_steps 300 --T_thresh 5e-2 --W 1008 --H 756
+python main_gui.py --path D:/Data/nerf_llff_data/trex --workspace model/trex --exp_name trex_0 -O --max_iter_num 1 --num_seek_IP 1 --sim_dx 0.05 --cut --cut_bounds -0.62 1.0 -0.82 0.42 -0.52 0.28 --max_steps 300 --T_thresh 5e-2 --W 1008 --H 756
 ```
 
 In this case, objects inside cut bounds are simulated and rendered using ray bending, while the rest is rendered as a static background.
@@ -145,6 +146,12 @@ In this case, objects inside cut bounds are simulated and rendered using ray ben
 
 ### Parameters
 Key command line parameters include:
+
+- Shared Parameters:
+  - `path`: the path to NeRF dataset, the directory containing transfom*.json
+  - `dataset_type`: used only for NeRF synthetic data, `--dataset_type synthetic` is equivalent to to setting `--scale 0.8 --bound 1.0 --dt_gamma 0.0 --W 800 --H 800`.
+  - `workspace`: directory of saved checkpoints
+  - `exp_name`: customizable experiment name
 
 - Point Sampling Parameters:
     - `sub_coeff`: The bigger, the more boundary points sampled.
@@ -156,8 +163,10 @@ Key command line parameters include:
     - `sim_iters`: number of local-global steps
     - `sim_stiff`: strength of boundary condition
 - Rendering Parameters:
-    - `max_iter_num`: For quadratic ray bending. The maximum number of of Newton iterations when solving for the rest shape position. More iterations give (possibly) better rendering quality and slower rendering speed.
-    - `num_seek_IP`: For quadratic ray bending. The number of IPs to seek for each query point. At most 3 (i.e., valid values are 1, 2, 3). The rest position will be weighted sum of rest positions calculated by these IPs.
+    - `max_iter_num`: For quadratic ray bending. The maximum number of of Newton iterations when solving for the rest shape position. More iterations give (potentially) better rendering quality and slower rendering speed.
+    - `num_seek_IP`: For quadratic ray bending. The number of IPs to seek for each query point. Valid values are 1, 2, 3. The rest position will be weighted sum of rest positions calculated by these IPs.
+    - `sim_dx`: spatial hashing grid size.
+    - `max_steps`, `T_thresh`: NeRF rendering settings. 
 
 ## Citation
 
