@@ -477,7 +477,7 @@ class NeRFSimGUI:
         self.depth_average = None
         self.rays_o = None
         self.rays_d = None
-        self.sid = None
+
         self.pts, _, _ = self.solver.get_IP_info()
         self.pts = self.pts.cpu().numpy()
 
@@ -486,7 +486,9 @@ class NeRFSimGUI:
         self.fps_values = []
         self.max_frames_to_capture = 30
 
+        self.sid = None
         self.force_scale = 1.0
+        self.mouse_force_3d = torch.zeros(3, dtype=torch.float32)
 
         self.poses_in_dataset = self.get_poses(self.opt.path)
 
@@ -564,19 +566,21 @@ class NeRFSimGUI:
             dpg.draw_line((x0, y0), (x1, y1), color=[0, 0, 0, 100], thickness=5, parent="_primary_window", tag="l1")
             p1, _ = self.screen_to_world(x1, y1)
             p0 = self.pts[self.sid]
-            mouse_force_3d = self.force_scale * 1e5 * (p1 - p0)
-            # print(f"force: {np.linalg.norm(mouse_force_3d)}")
-            force_norm = np.linalg.norm(mouse_force_3d)
+            self.mouse_force_3d = self.force_scale * 1e5 * (p1 - p0)
+            self.mouse_force_3d = torch.tensor(self.mouse_force_3d)
+            force_norm = torch.norm(self.mouse_force_3d)
             if force_norm > 5e5:
-                mouse_force_3d *= 5e5 / force_norm
-            if mouse_force_3d.shape[0] == 3:
-                self.solver.update_force(self.sid, torch.tensor([mouse_force_3d[0], mouse_force_3d[1], mouse_force_3d[2]]))
+                self.mouse_force_3d *= 5e5 / force_norm
 
         if not self.paused:
             self.need_update = True
 
         t = 0
         if self.need_update or self.spp < self.opt.max_spp:
+            if self.sid is None:
+                self.solver.clear_force()
+            else:
+                self.solver.update_force(self.sid, self.mouse_force_3d)
 
             starter, ender = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
             starter.record()
@@ -809,9 +813,8 @@ class NeRFSimGUI:
             if dpg.is_key_pressed(32): # space
                 self.paused = not self.paused
             if dpg.is_key_pressed(81): # Q
-                if self.sid is not None:
-                    self.solver.update_force(self.sid, torch.tensor([0.0, 0.0, 0.0]))
                 self.sid = None
+                self.mouse_force_3d = torch.zeros(3, dtype=torch.float32)
                 dpg.delete_item("c0")
                 dpg.delete_item("c1")
                 dpg.delete_item("l1")
@@ -835,9 +838,8 @@ class NeRFSimGUI:
                 # print(f"mouse clicked at ({x},{y}), depth={d}, pos={pos}, closest={self.pts[self.sid]}, distance={len(pos-self.pts[self.sid])}")
 
             if dpg.is_mouse_button_down(dpg.mvMouseButton_Right):
-                if self.sid is not None:
-                    self.solver.update_force(self.sid, torch.tensor([0.0, 0.0, 0.0]))
                 self.sid = None
+                self.mouse_force_3d = torch.zeros(3, dtype=torch.float32)
                 dpg.delete_item("c0")
                 dpg.delete_item("c1")
                 dpg.delete_item("l1")

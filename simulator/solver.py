@@ -587,6 +587,10 @@ class Simulator:
         dof_f = dof_f.reshape(-1)
         self.dof_f = dof_f
 
+    def clear_force(self):
+        dof_f = torch.zeros((self.dof.size(0) // 3, 3), dtype=torchfloat).cuda()
+        dof_f = dof_f.reshape(-1)
+        self.dof_f = dof_f
 
     def stepforward(self):
         momentum = self.compute_momentum()
