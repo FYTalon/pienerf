@@ -142,7 +142,7 @@ python main_gui.py --path D:/Data/nerf_llff_data/trex --workspace model/trex --e
 
 In this case, objects inside cut bounds are simulated and rendered using ray bending, while the rest is rendered as a static background.
 
-![](./assets/trex.gif)
+![](./assets/trex_1.gif)
 
 ### Parameters
 Key command line parameters include:
