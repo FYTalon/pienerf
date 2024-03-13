@@ -117,10 +117,10 @@ python main_sample.py --workspace model/trex --exp_name trex_0 --sub_coeff 0.75 
 
 ### Simulate and Render
 
-Saving edited `chair_0.ply` into folder `model/chair`, and run
+For demo of chair, run
 
 ```
-python main_gui.py --path D:/Data/nerf_synthetic/chair --dataset_type synthetic --workspace model/chair --exp_name chair_0 -O --max_iter_num 1 --num_seek_IP 3 --sim_dx 0.05
+python main_gui.py --dataset_type synthetic --workspace model/chair --exp_name chair_0 -O --max_iter_num 1 --num_seek_IP 3 --sim_dx 0.05
 ```
 It can be slow for the first-time run, because Warp CUDA kernel compiling takes some time (5 to 10 minutes). After first compiling, it should be faster (a few seconds).
 

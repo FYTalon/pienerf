@@ -490,7 +490,8 @@ class NeRFSimGUI:
         self.force_scale = 1.0
         self.mouse_force_3d = torch.zeros(3, dtype=torch.float32)
 
-        self.poses_in_dataset = self.get_poses(self.opt.path)
+        if self.opt.dataset_type != "synthetic":
+            self.poses_in_dataset = self.get_poses(self.opt.path)
 
         if self.show:
             dpg.create_context()
