@@ -415,14 +415,6 @@ class NeRFGUI:
 
         dpg.create_viewport(title='torch-ngp', width=self.W, height=self.H, resizable=False)
 
-        # TODO: seems dearpygui doesn't support resizing texture...
-        # def callback_resize(sender, app_data):
-        #     self.W = app_data[0]
-        #     self.H = app_data[1]
-        #     # how to reload texture ???
-
-        # dpg.set_viewport_resize_callback(callback_resize)
-
         ### global theme
         with dpg.theme() as theme_no_padding:
             with dpg.theme_component(dpg.mvAll):
@@ -527,10 +519,6 @@ class NeRFSimGUI:
             pose = nerf_matrix_to_ngp(pose, scale=self.opt.scale, offset=self.opt.offset)
             poses.append(pose)
         return poses
-
-    def reset_camera(self): # TODO
-        self.cam = OrbitCamera(self.W, self.H, r=self.opt.radius, fovy=self.opt.fovy)
-        self.need_update = True
 
     def prepare_buffer(self, outputs):
         if self.mode == 'image':
@@ -935,14 +923,6 @@ class NeRFSimGUI:
             dpg.add_mouse_drag_handler(button=dpg.mvMouseButton_Middle, callback=callback_camera_drag_pan)
 
         dpg.create_viewport(title='pie-nerf', width=self.W, height=self.H, resizable=False)
-
-        # TODO: seems dearpygui doesn't support resizing texture...
-        # def callback_resize(sender, app_data):
-        #     self.W = app_data[0]
-        #     self.H = app_data[1]
-        #     # how to reload texture ???
-
-        # dpg.set_viewport_resize_callback(callback_resize)
 
         ### global theme
         with dpg.theme() as theme_no_padding:

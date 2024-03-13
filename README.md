@@ -44,17 +44,17 @@ python setup.py build_ext --inplace && pip install .
 **If you want skip training and sampling**, we provide several pretrained NeRF models and sampled point cloud files (with configs encoded) [here](https://drive.google.com/drive/folders/1gF56IjQpdXauV9gP8vbouRTnuwxR7mxa) for you to download. The directory should look like this
 
 ```
-pienerf
-- model
-	- chair
-		- checkpoints
-			ngp_ep0300.pth
-	- trex
-		- checkpoints
-			ngp_ep0625.pth
-- assets
-	chair_0.ply
-	trex_0.ply
+/pienerf
+  /model
+    /chair
+      /checkpoints
+        ngp_ep0300.pth
+    /trex
+      /checkpoints
+        ngp_ep0625.pth
+  /assets
+    chair_0.ply
+    trex_0.ply
 ...
 main_gui.py
 ...
@@ -158,8 +158,6 @@ Key command line parameters include:
 - Rendering Parameters:
     - `max_iter_num`: For quadratic ray bending. The maximum number of of Newton iterations when solving for the rest shape position. More iterations give (possibly) better rendering quality and slower rendering speed.
     - `num_seek_IP`: For quadratic ray bending. The number of IPs to seek for each query point. At most 3 (i.e., valid values are 1, 2, 3). The rest position will be weighted sum of rest positions calculated by these IPs.
-
-
 
 ## Citation
 

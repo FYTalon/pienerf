@@ -71,7 +71,7 @@ def get_shared_opts(parser):
     parser.add_argument('--vres', type=int, default=96)
     parser.add_argument('--con', type=int, default=1) # num of connected components to keep
 
-    parser.add_argument('--dataset_type', type=str, default="")# --scale 0.8 --bound 1.0 --dt_gamma 0.0 --W 800 --H 800
+    parser.add_argument('--dataset_type', type=str, default="")
 
     # sampling settings
     parser.add_argument('--density_threshold', type=float, default=0.05)
@@ -103,11 +103,6 @@ def get_shared_opts(parser):
         opt.dt_gamma = 0.0
         opt.W = 800
         opt.H = 800
-    # else:
-    #     opt.scale = 0.33
-    #     opt.bound = 2.0
-    #     opt.W = 1920
-    #     opt.H = 1080
 
     if opt.O:
         opt.fp16 = True

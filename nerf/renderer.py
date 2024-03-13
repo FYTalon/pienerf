@@ -872,7 +872,6 @@ class NeRFRenderer(nn.Module):
                 T1 += t1
 
             sigmas, rgbs = self(xyzs, dirs)
-            # sigmas, rgbs = sigmas.to(torch.float32), rgbs.to(torch.float32)
             sigmas = self.density_scale * sigmas
 
             t2 = time.time()
@@ -893,7 +892,6 @@ class NeRFRenderer(nn.Module):
 
         if timing_on:
             print(f"timing: bending: {time.time() - logtime}, march_rays: {T1}, composite_rays: {T2}")
-            logtime = time.time()
 
         depth_0 = depth
         image = image + (1 - weights_sum).unsqueeze(-1) * bg_color
