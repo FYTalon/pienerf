@@ -107,7 +107,7 @@ The following attributes need to be specified by your self:
 - `lam` & `mu`: float, material parameters, typically 1e6.
 - `mass`: float, mass of each vertex, typically 1e3*`vp`.
 
-Note: for real-world dataset, you need to first determine the bounding box of the object you want to simulate, and then set it by `--cut --cut_bounds `, where `--cut_bounds` are a list of floats ( x_min 
+Note: for real-world dataset, you need to first determine the bounding box of the object you want to simulate, and then set it by `--cut --cut_bounds `, where `--cut_bounds` are a list of floats ( x_min, x_max, y_min, y_max, z_min, z_max).
 
 e.g. for `nerf_llff_data/trex`, you can run
 
